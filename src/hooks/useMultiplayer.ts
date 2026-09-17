@@ -26,16 +26,21 @@ export function useMultiplayer() {
   const [previewDuration, setPreviewDuration] = useState(3.0);
   const [roundResults, setRoundResults] = useState<RoundResultData[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [readyPlayerIds, setReadyPlayerIds] = useState<string[]>([]);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const userIdRef = useRef<string>(`user_${Math.random().toString(36).slice(2, 9)}`);
-  const playerNameRef = useRef<string>('Player');
+  const playerNameRef = useRef<string>('Golumolu');
   const isHostRef = useRef(false);
   const roundTimerRef = useRef<any>(null);
   const currentTargetRef = useRef<HSLColor>({ h: 0, s: 0, l: 50 });
   const roundRef = useRef(1);
   const submissionsRef = useRef<Map<string, HSLColor>>(new Map());
   const scoresRef = useRef<Map<string, number>>(new Map());
+  const readyPlayerIdsRef = useRef<Set<string>>(new Set());
+
+  const advanceRoundRef = useRef<() => void>(() => {});
+  const resolveRoundRef = useRef<() => void>(() => {});
 
   // Check Supabase connection
   useEffect(() => {
@@ -61,6 +66,10 @@ export function useMultiplayer() {
     const results: RoundResultData[] = [];
     const channel = channelRef.current;
     const target = currentTargetRef.current;
+
+    // Reset ready-ups for this result phase
+    readyPlayerIdsRef.current.clear();
+    setReadyPlayerIds([]);
 
     // Build results from latest player presence
     const state = channel.presenceState();
@@ -105,17 +114,16 @@ export function useMultiplayer() {
       event: 'ROUND_RESULTS',
       payload: { results, players: updatedPlayers },
     });
-
-    // Auto-advance to next round after 6 seconds
-    setTimeout(() => {
-      advanceRound();
-    }, 6000);
   }, []);
 
   // Host: advance or start round
   const advanceRound = useCallback(() => {
     if (!channelRef.current || !isHostRef.current) return;
     const channel = channelRef.current;
+
+    // Reset ready tracking for the upcoming round
+    readyPlayerIdsRef.current.clear();
+    setReadyPlayerIds([]);
 
     const nextRound = roundRef.current + 1;
     roundRef.current = nextRound;
@@ -171,10 +179,23 @@ export function useMultiplayer() {
 
       // 15-second guess timer
       roundTimerRef.current = setTimeout(() => {
-        resolveRound();
+        resolveRoundRef.current();
       }, 15000);
     }, 3000);
-  }, [resolveRound]);
+  }, []);
+
+  resolveRoundRef.current = resolveRound;
+  advanceRoundRef.current = advanceRound;
+
+  const checkAllReady = useCallback((channel: RealtimeChannel) => {
+    if (!isHostRef.current) return;
+    const state = channel.presenceState();
+    const presences = Object.values(state).flat() as any[];
+    const count = presences.length;
+    if (count > 0 && readyPlayerIdsRef.current.size >= count) {
+      advanceRoundRef.current();
+    }
+  }, []);
 
   // Connect to room channel
   const setupChannel = useCallback(
@@ -212,10 +233,15 @@ export function useMultiplayer() {
           setIsHost(true);
           isHostRef.current = true;
         }
+
+        // If host and players disconnected during results, check if remaining are ready
+        checkAllReady(channel);
       });
 
       // 2. Broadcasts
       channel.on('broadcast', { event: 'ROUND_PREVIEW' }, ({ payload }) => {
+        readyPlayerIdsRef.current.clear();
+        setReadyPlayerIds([]);
         setCurrentTarget(payload.target);
         currentTargetRef.current = payload.target;
         setPreviewDuration(payload.duration / 1000);
@@ -242,12 +268,20 @@ export function useMultiplayer() {
           const count = (Object.values(state).flat() as any[]).length;
           if (submissionsRef.current.size >= count && count > 0) {
             if (roundTimerRef.current) clearTimeout(roundTimerRef.current);
-            resolveRound();
+            resolveRoundRef.current();
           }
         }
       });
 
+      channel.on('broadcast', { event: 'PLAYER_READY_NEXT' }, ({ payload }) => {
+        readyPlayerIdsRef.current.add(payload.userId);
+        setReadyPlayerIds(Array.from(readyPlayerIdsRef.current));
+        checkAllReady(channel);
+      });
+
       channel.on('broadcast', { event: 'ROUND_RESULTS' }, ({ payload }) => {
+        readyPlayerIdsRef.current.clear();
+        setReadyPlayerIds([]);
         setRoundResults(payload.results);
         setPlayers(payload.players);
         setGameState('result');
@@ -277,13 +311,13 @@ export function useMultiplayer() {
         }
       });
     },
-    [resolveRound]
+    [checkAllReady]
   );
 
   // 1. Create Room (Generates 6-digit code)
   const createRoom = useCallback(
     (name: string) => {
-      const pName = name.trim() || 'Host';
+      const pName = name.trim() || 'Golumolu';
       playerNameRef.current = pName;
 
       // 6-digit numeric room code: 100000 - 999999
@@ -297,7 +331,7 @@ export function useMultiplayer() {
   const joinRoom = useCallback(
     (code: string, name: string) => {
       const cleanCode = code.trim();
-      const pName = name.trim() || 'Player';
+      const pName = name.trim() || 'Golumolu';
       playerNameRef.current = pName;
 
       if (cleanCode.length !== 6) {
@@ -316,8 +350,10 @@ export function useMultiplayer() {
     roundRef.current = 0;
     scoresRef.current.clear();
     submissionsRef.current.clear();
-    advanceRound();
-  }, [advanceRound]);
+    readyPlayerIdsRef.current.clear();
+    setReadyPlayerIds([]);
+    advanceRoundRef.current();
+  }, []);
 
   // 4. Submit Guess
   const submitGuess = useCallback(
@@ -340,14 +376,32 @@ export function useMultiplayer() {
         const count = (Object.values(state).flat() as any[]).length;
         if (submissionsRef.current.size >= count && count > 0) {
           if (roundTimerRef.current) clearTimeout(roundTimerRef.current);
-          resolveRound();
+          resolveRoundRef.current();
         }
       }
     },
-    [resolveRound]
+    []
   );
 
-  // 5. Leave Room
+  // 5. Player Ready for Next Round
+  const readyNextRound = useCallback(() => {
+    if (!channelRef.current) return;
+    const channel = channelRef.current;
+    const uid = userIdRef.current;
+
+    readyPlayerIdsRef.current.add(uid);
+    setReadyPlayerIds(Array.from(readyPlayerIdsRef.current));
+
+    channel.send({
+      type: 'broadcast',
+      event: 'PLAYER_READY_NEXT',
+      payload: { userId: uid },
+    });
+
+    checkAllReady(channel);
+  }, [checkAllReady]);
+
+  // 6. Leave Room
   const leaveRoom = useCallback(() => {
     if (channelRef.current) {
       channelRef.current.unsubscribe();
@@ -363,6 +417,8 @@ export function useMultiplayer() {
     setGameState('lobby');
     setRoundResults([]);
     submissionsRef.current.clear();
+    readyPlayerIdsRef.current.clear();
+    setReadyPlayerIds([]);
   }, []);
 
   return {
@@ -376,10 +432,13 @@ export function useMultiplayer() {
     previewDuration,
     roundResults,
     errorMessage,
+    readyPlayerIds,
+    userId: userIdRef.current,
     createRoom,
     joinRoom,
     startMatch,
     submitGuess,
+    readyNextRound,
     leaveRoom,
   };
 }

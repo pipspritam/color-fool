@@ -22,12 +22,14 @@ export interface RoundRecord {
 
 interface GameScreenProps {
   difficulty: Difficulty;
+  sliderPosition?: 'left' | 'right';
   onFinishGame: (records: RoundRecord[]) => void;
   onExit: () => void;
 }
 
 export const GameScreen: React.FC<GameScreenProps> = ({
   difficulty,
+  sliderPosition = 'left',
   onFinishGame,
   onExit,
 }) => {
@@ -146,10 +148,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       {/* Phase 2: Full-screen interactive guess */}
       {phase === 'guess' && (
         <View style={styles.guessArea}>
-          {/* 3 Left Vertical Gesture Sliders (Flush against left boundary) */}
+          {/* 3 Vertical Gesture Sliders (Left or Right based on sliderPosition) */}
           <View
             style={[
               styles.sliderRail,
+              sliderPosition === 'right'
+                ? { right: 8, left: undefined }
+                : { left: 8, right: undefined },
               {
                 top: Math.max(insets.top, 24) + 68,
                 bottom: Math.max(insets.bottom, 20) + 80,

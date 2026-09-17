@@ -21,13 +21,12 @@ import { triggerHaptic } from '../utils/haptics';
 
 interface LobbyScreenProps {
   onBack: () => void;
+  sliderPosition?: 'left' | 'right';
 }
 
-export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack }) => {
+export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack, sliderPosition = 'left' }) => {
   const insets = useSafeAreaInsets();
-  const [playerName, setPlayerName] = useState(
-    'Player' + Math.floor(100 + Math.random() * 900)
-  );
+  const [playerName, setPlayerName] = useState('Golumolu');
   const [inputCode, setInputCode] = useState('');
   const [lockedIn, setLockedIn] = useState(false);
 
@@ -42,10 +41,13 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack }) => {
     previewDuration,
     roundResults,
     errorMessage,
+    readyPlayerIds,
+    userId,
     createRoom,
     joinRoom,
     startMatch,
     submitGuess,
+    readyNextRound,
     leaveRoom,
   } = useMultiplayer();
 
@@ -157,36 +159,50 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack }) => {
             <View
               style={[
                 styles.sliderRail,
+                sliderPosition === 'right'
+                  ? { right: 8, left: undefined }
+                  : { left: 8, right: undefined },
                 {
                   top: Math.max(insets.top, 24) + 70,
                   bottom: Math.max(insets.bottom, 20) + 80,
                 },
               ]}
             >
-              <VerticalSlider
-                value={guess.h}
-                min={0}
-                max={360}
-                colors={hueColors}
-                onChange={setHue}
-                width={34}
-              />
-              <VerticalSlider
-                value={guess.s}
-                min={0}
-                max={100}
-                colors={satColors}
-                onChange={setSaturation}
-                width={34}
-              />
-              <VerticalSlider
-                value={guess.l}
-                min={0}
-                max={100}
-                colors={lightColors}
-                onChange={setLightness}
-                width={34}
-              />
+              <View style={styles.sliderItem}>
+                <VerticalSlider
+                  value={guess.h}
+                  min={0}
+                  max={360}
+                  colors={hueColors}
+                  onChange={setHue}
+                  width={34}
+                />
+                <Text style={styles.sliderLabel}>H</Text>
+              </View>
+
+              <View style={styles.sliderItem}>
+                <VerticalSlider
+                  value={guess.s}
+                  min={0}
+                  max={100}
+                  colors={satColors}
+                  onChange={setSaturation}
+                  width={34}
+                />
+                <Text style={styles.sliderLabel}>S</Text>
+              </View>
+
+              <View style={styles.sliderItem}>
+                <VerticalSlider
+                  value={guess.l}
+                  min={0}
+                  max={100}
+                  colors={lightColors}
+                  onChange={setLightness}
+                  width={34}
+                />
+                <Text style={styles.sliderLabel}>L</Text>
+              </View>
             </View>
 
             <View
@@ -216,18 +232,21 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack }) => {
           </View>
         )}
 
-          {/* Round Results */}
-          {isResult && myResult && (
-            <ResultSplit
-              target={currentTarget}
-              guess={myResult.guess}
-              deltaE={myResult.deltaE}
-              score={myResult.points}
-              roundNumber={round}
-              onNextRound={() => {}}
-              isLastRound={round >= 5}
-            />
-          )}
+        {/* Round Results */}
+        {isResult && myResult && (
+          <ResultSplit
+            target={currentTarget}
+            guess={myResult.guess}
+            deltaE={myResult.deltaE}
+            score={myResult.points}
+            roundNumber={round}
+            onNextRound={readyNextRound}
+            isLastRound={round >= 5}
+            readyCount={readyPlayerIds.length}
+            totalPlayers={players.length}
+            hasReadied={readyPlayerIds.includes(userId)}
+          />
+        )}
 
           {/* Match Summary Podium */}
           {isSummary && (
@@ -710,6 +729,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     zIndex: 15,
+  },
+  sliderItem: {
+    height: '100%',
+    alignItems: 'center',
+  },
+  sliderLabel: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900',
+    marginTop: 6,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   bottomHud: {
     position: 'absolute',

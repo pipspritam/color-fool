@@ -13,6 +13,7 @@ export default function App() {
   );
   const [activeDifficulty, setActiveDifficulty] = useState<Difficulty>('medium');
   const [finishedRecords, setFinishedRecords] = useState<RoundRecord[]>([]);
+  const [sliderPosition, setSliderPosition] = useState<'left' | 'right'>('left');
 
   const handleStartSolo = (diff: Difficulty) => {
     setActiveDifficulty(diff);
@@ -36,17 +37,23 @@ export default function App() {
         <HomeScreen
           onStartSolo={handleStartSolo}
           onStartMultiplayer={() => setCurrentScreen('lobby')}
+          sliderPosition={sliderPosition}
+          onUpdateSliderPosition={setSliderPosition}
         />
       )}
       {currentScreen === 'game' && (
         <GameScreen
           difficulty={activeDifficulty}
+          sliderPosition={sliderPosition}
           onFinishGame={handleGameFinish}
           onExit={() => setCurrentScreen('home')}
         />
       )}
       {currentScreen === 'lobby' && (
-        <LobbyScreen onBack={() => setCurrentScreen('home')} />
+        <LobbyScreen
+          sliderPosition={sliderPosition}
+          onBack={() => setCurrentScreen('home')}
+        />
       )}
       {currentScreen === 'summary' && (
         <SummaryScreen records={finishedRecords} onRestart={handleRestart} />

@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
 export const triggerHaptic = (
-  style: 'light' | 'medium' | 'heavy' | 'success' | 'warning' = 'light'
+  style: 'light' | 'medium' | 'heavy' | 'success' | 'warning' | 'selection' = 'light'
 ) => {
   if (Platform.OS === 'web') return;
 
@@ -17,6 +17,8 @@ export const triggerHaptic = (
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else if (style === 'warning') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    } else if (style === 'selection') {
+      Haptics.selectionAsync();
     }
   } catch {
     // Fail silently in simulator or unsupported devices

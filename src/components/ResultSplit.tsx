@@ -11,6 +11,9 @@ interface ResultSplitProps {
   roundNumber: number;
   onNextRound: () => void;
   isLastRound: boolean;
+  readyCount?: number;
+  totalPlayers?: number;
+  hasReadied?: boolean;
 }
 
 export const ResultSplit: React.FC<ResultSplitProps> = ({
@@ -21,9 +24,24 @@ export const ResultSplit: React.FC<ResultSplitProps> = ({
   roundNumber,
   onNextRound,
   isLastRound,
+  readyCount = 0,
+  totalPlayers,
+  hasReadied = false,
 }) => {
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(insets.top, 24) + 64;
+
+  const isMultiplayer = totalPlayers !== undefined && totalPlayers > 1;
+
+  let buttonLabel = isLastRound ? 'VIEW MATCH SUMMARY →' : 'NEXT ROUND →';
+  if (isMultiplayer) {
+    if (hasReadied) {
+      buttonLabel = `✓ READY! (${readyCount}/${totalPlayers} WAITING...)`;
+    } else {
+      const actionName = isLastRound ? 'VIEW MATCH SUMMARY' : 'NEXT ROUND';
+      buttonLabel = `${actionName} (${readyCount}/${totalPlayers} READY)`;
+    }
+  }
 
   return (
     <View style={styles.container}>
@@ -62,9 +80,22 @@ export const ResultSplit: React.FC<ResultSplitProps> = ({
           </Text>
         </View>
 
-        <TouchableOpacity style={styles.button} onPress={onNextRound} activeOpacity={0.85}>
-          <Text style={styles.buttonText}>
-            {isLastRound ? 'VIEW MATCH SUMMARY →' : 'NEXT ROUND →'}
+        <TouchableOpacity
+          style={[
+            styles.button,
+            isMultiplayer && hasReadied && styles.buttonReadied,
+          ]}
+          onPress={onNextRound}
+          disabled={isMultiplayer && hasReadied}
+          activeOpacity={0.85}
+        >
+          <Text
+            style={[
+              styles.buttonText,
+              isMultiplayer && hasReadied && styles.buttonTextReadied,
+            ]}
+          >
+            {buttonLabel}
           </Text>
         </TouchableOpacity>
       </View>
@@ -179,10 +210,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 6,
   },
+  buttonReadied: {
+    backgroundColor: 'rgba(74, 222, 128, 0.15)',
+    borderWidth: 1.5,
+    borderColor: '#4ADE80',
+  },
   buttonText: {
     color: '#0F172A',
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 1.2,
+  },
+  buttonTextReadied: {
+    color: '#4ADE80',
+    letterSpacing: 0.8,
   },
 });

@@ -1,16 +1,25 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Difficulty } from '../hooks/useColorState';
+import { triggerHaptic } from '../utils/haptics';
 
 interface HomeScreenProps {
   onStartSolo: (difficulty: Difficulty) => void;
   onStartMultiplayer: () => void;
+  sliderPosition: 'left' | 'right';
+  onUpdateSliderPosition: (pos: 'left' | 'right') => void;
 }
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({ onStartSolo, onStartMultiplayer }) => {
+export const HomeScreen: React.FC<HomeScreenProps> = ({
+  onStartSolo,
+  onStartMultiplayer,
+  sliderPosition,
+  onUpdateSliderPosition,
+}) => {
   const insets = useSafeAreaInsets();
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
+  const [showSettings, setShowSettings] = useState(false);
 
   return (
     <View
@@ -22,6 +31,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onStartSolo, onStartMult
         },
       ]}
     >
+      {/* Settings Gear Button */}
+      <TouchableOpacity
+        style={[
+          styles.settingsBtn,
+          {
+            top: Math.max(insets.top, 24) + 8,
+          },
+        ]}
+        onPress={() => {
+          triggerHaptic('light');
+          setShowSettings(true);
+        }}
+        activeOpacity={0.7}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+      >
+        <Text style={styles.settingsIcon}>⚙</Text>
+      </TouchableOpacity>
       <View style={styles.content}>
         {/* Brand Header */}
         <View style={styles.header}>
@@ -106,6 +132,117 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onStartSolo, onStartMult
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Settings Modal */}
+      <Modal
+        visible={showSettings}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSettings(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setShowSettings(false)}
+        >
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>SETTINGS</Text>
+            <Text style={styles.modalSubtitle}>COLOR BARS POSITION (H S L)</Text>
+
+            <View style={styles.optionsList}>
+              {/* Option 1: Left */}
+              <TouchableOpacity
+                style={[
+                  styles.optionCard,
+                  sliderPosition === 'left' && styles.optionCardActive,
+                ]}
+                onPress={() => {
+                  triggerHaptic('selection');
+                  onUpdateSliderPosition('left');
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.optionLeft}>
+                  <View
+                    style={[
+                      styles.radioCircle,
+                      sliderPosition === 'left' && styles.radioCircleActive,
+                    ]}
+                  >
+                    {sliderPosition === 'left' && <View style={styles.radioInner} />}
+                  </View>
+                  <View>
+                    <Text
+                      style={[
+                        styles.optionLabel,
+                        sliderPosition === 'left' && styles.optionLabelActive,
+                      ]}
+                    >
+                      Left (H S L)
+                    </Text>
+                    <Text style={styles.optionSub}>
+                      Slider bars docked on the left rail
+                    </Text>
+                  </View>
+                </View>
+                {sliderPosition === 'left' && (
+                  <Text style={styles.checkIcon}>✓</Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Option 2: Right */}
+              <TouchableOpacity
+                style={[
+                  styles.optionCard,
+                  sliderPosition === 'right' && styles.optionCardActive,
+                ]}
+                onPress={() => {
+                  triggerHaptic('selection');
+                  onUpdateSliderPosition('right');
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.optionLeft}>
+                  <View
+                    style={[
+                      styles.radioCircle,
+                      sliderPosition === 'right' && styles.radioCircleActive,
+                    ]}
+                  >
+                    {sliderPosition === 'right' && <View style={styles.radioInner} />}
+                  </View>
+                  <View>
+                    <Text
+                      style={[
+                        styles.optionLabel,
+                        sliderPosition === 'right' && styles.optionLabelActive,
+                      ]}
+                    >
+                      Right (H S L)
+                    </Text>
+                    <Text style={styles.optionSub}>
+                      Slider bars docked on the right rail
+                    </Text>
+                  </View>
+                </View>
+                {sliderPosition === 'right' && (
+                  <Text style={styles.checkIcon}>✓</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.modalDoneBtn}
+              onPress={() => {
+                triggerHaptic('light');
+                setShowSettings(false);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.modalDoneText}>DONE</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 };
@@ -114,6 +251,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#090D16',
+  },
+  settingsBtn: {
+    position: 'absolute',
+    right: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 30,
+  },
+  settingsIcon: {
+    fontSize: 20,
+    color: '#94A3B8',
   },
   content: {
     flex: 1,
@@ -258,6 +412,110 @@ const styles = StyleSheet.create({
     color: '#38BDF8',
     fontSize: 14,
     fontWeight: '800',
+    letterSpacing: 1,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(9, 13, 22, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: '#131D31',
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  modalTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginTop: 4,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  optionsList: {
+    gap: 12,
+    marginBottom: 24,
+  },
+  optionCard: {
+    backgroundColor: '#1E293B',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  optionCardActive: {
+    borderColor: '#38BDF8',
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+  },
+  optionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  radioCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#64748B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioCircleActive: {
+    borderColor: '#38BDF8',
+  },
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#38BDF8',
+  },
+  optionLabel: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  optionLabelActive: {
+    color: '#38BDF8',
+  },
+  optionSub: {
+    color: '#94A3B8',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  checkIcon: {
+    color: '#38BDF8',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  modalDoneBtn: {
+    backgroundColor: '#38BDF8',
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  modalDoneText: {
+    color: '#090D16',
+    fontWeight: '900',
+    fontSize: 14,
     letterSpacing: 1,
   },
 });
