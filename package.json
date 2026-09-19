@@ -5,7 +5,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
     "culori": "^4.0.2",
-    "expo": "~57.0.23",
+    "expo": "~57.0.24",
     "expo-haptics": "~57.0.3",
     "expo-linear-gradient": "~57.0.2",
     "expo-status-bar": "~57.0.1",
