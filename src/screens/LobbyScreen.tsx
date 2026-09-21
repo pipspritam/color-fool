@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,9 @@ import {
   FlatList,
   Share,
   Platform,
+  ScrollView,
+  BackHandler,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMultiplayer } from '../hooks/useMultiplayer';
@@ -15,20 +18,77 @@ import { VerticalSlider } from '../components/VerticalSlider';
 import { CountdownRing } from '../components/CountdownRing';
 import { ResultSplit } from '../components/ResultSplit';
 import { Leaderboard } from '../components/Leaderboard';
-import { useColorState } from '../hooks/useColorState';
+import { SettingsModal } from '../components/SettingsModal';
+import {
+  useColorState,
+  Difficulty,
+  CustomGameConfig,
+  DIFFICULTY_CONFIG,
+} from '../hooks/useColorState';
+import { MultiplayerRoomSettings } from '../hooks/useMultiplayer';
 import { hslToString } from '../utils/colorScorer';
 import { triggerHaptic } from '../utils/haptics';
+import { loadSavedSettings, savePlayerName, generateAutoPlayerName } from '../utils/storage';
 
 interface LobbyScreenProps {
-  onBack: () => void;
+  difficulty: Difficulty;
+  customConfig?: CustomGameConfig;
   sliderPosition?: 'left' | 'right';
+  onUpdateSliderPosition?: (pos: 'left' | 'right') => void;
+  onBack: () => void;
 }
 
-export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack, sliderPosition = 'left' }) => {
+export const LobbyScreen: React.FC<LobbyScreenProps> = ({
+  difficulty,
+  customConfig,
+  sliderPosition = 'left',
+  onUpdateSliderPosition,
+  onBack,
+}) => {
   const insets = useSafeAreaInsets();
-  const [playerName, setPlayerName] = useState('Golumolu');
+  const [playerName, setPlayerName] = useState(generateAutoPlayerName);
+  const [isCustomName, setIsCustomName] = useState(false);
   const [inputCode, setInputCode] = useState('');
   const [lockedIn, setLockedIn] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Load cached player name on mount
+  useEffect(() => {
+    loadSavedSettings()
+      .then((settings) => {
+        if (settings.playerName) {
+          setPlayerName(settings.playerName);
+        }
+        setIsCustomName(settings.hasCustomName);
+      })
+      .catch((err) => {
+        console.warn('Failed to load saved settings in lobby:', err);
+      });
+  }, []);
+
+  const handlePlayerNameChange = (text: string) => {
+    setPlayerName(text);
+    setIsCustomName(true);
+    savePlayerName(text, true);
+  };
+
+  const handleRandomizeName = () => {
+    triggerHaptic('light');
+    const autoName = generateAutoPlayerName();
+    setPlayerName(autoName);
+    setIsCustomName(false);
+    savePlayerName(autoName, false);
+  };
+
+  const homeConfigSettings: MultiplayerRoomSettings = {
+    difficulty,
+    previewSeconds:
+      difficulty === 'custom' && customConfig
+        ? customConfig.previewSeconds
+        : DIFFICULTY_CONFIG[difficulty as Exclude<Difficulty, 'custom'>].previewSeconds,
+    guessSeconds: difficulty === 'custom' && customConfig ? customConfig.guessSeconds : 0,
+    totalRounds: difficulty === 'custom' && customConfig ? customConfig.rounds : 5,
+  };
 
   const {
     connected,
@@ -42,6 +102,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack, sliderPosition
     roundResults,
     errorMessage,
     readyPlayerIds,
+    roomSettings,
     userId,
     createRoom,
     joinRoom,
@@ -53,8 +114,30 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack, sliderPosition
 
   const { guess, setHue, setSaturation, setLightness, resetGuess } = useColorState();
 
+  // Intercept Android hardware back button
+  useEffect(() => {
+    const onBackPress = () => {
+      if (roomCode) {
+        Alert.alert(
+          'Leave Room?',
+          'You will be disconnected from the multiplayer match.',
+          [
+            { text: 'Stay', style: 'cancel' },
+            { text: 'Leave', style: 'destructive', onPress: leaveRoom },
+          ]
+        );
+        return true;
+      }
+      onBack();
+      return true;
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [roomCode, leaveRoom, onBack]);
+
   // Reset guess and lock-in state when guessing starts
-  React.useEffect(() => {
+  useEffect(() => {
     if (gameState === 'guessing') {
       resetGuess();
       setLockedIn(false);
@@ -72,8 +155,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack, sliderPosition
     const message = `Join my room in color-fool! Room code: ${roomCode}`;
     if (Platform.OS === 'web') {
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(roomCode || '');
-        alert(`Room code ${roomCode} copied to clipboard!`);
+        try {
+          await navigator.clipboard.writeText(roomCode || '');
+          Alert.alert('Copied!', `Room code ${roomCode} copied to clipboard!`);
+        } catch {
+          // Clipboard write failed
+        }
       }
     } else {
       try {
@@ -127,19 +214,33 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack, sliderPosition
             },
           ]}
         >
-          <TouchableOpacity
-            onPress={leaveRoom}
-            style={styles.leaveBtn}
-            activeOpacity={0.7}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <Text style={styles.leaveText}>EXIT</Text>
-          </TouchableOpacity>
+          <View style={styles.hudLeftGroup}>
+            <TouchableOpacity
+              onPress={leaveRoom}
+              style={styles.leaveBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Text style={styles.leaveText}>EXIT</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                triggerHaptic('light');
+                setShowSettings(true);
+              }}
+              style={styles.inGameSettingsBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Text style={styles.inGameSettingsIcon}>⚙</Text>
+            </TouchableOpacity>
+          </View>
 
           <View style={styles.centerHud}>
             <Text style={styles.gameTitle}>color-fool</Text>
             <Text style={styles.gameRound}>
-              ROOM {roomCode} • ROUND {round} / 5
+              ROOM {roomCode} • ROUND {round} / {roomSettings.totalRounds}
             </Text>
           </View>
 
@@ -149,19 +250,38 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack, sliderPosition
         {/* Preview Phase */}
         {isPreview && (
           <View style={styles.previewCenter}>
-            <CountdownRing durationSeconds={previewDuration} />
+            <CountdownRing durationSeconds={previewDuration} label="MEMORIZE COLOR" />
           </View>
         )}
 
         {/* Guessing Phase */}
         {isGuessing && (
           <View style={styles.guessArea}>
+            {/* Real-time Guess Timer or Unlimited Indicator */}
+            {roomSettings.guessSeconds > 0 ? (
+              <View style={styles.guessTimerWrap} pointerEvents="none">
+                <CountdownRing
+                  durationSeconds={roomSettings.guessSeconds}
+                  label="TIME REMAINING"
+                  size="compact"
+                  onFinish={!lockedIn ? handleLockIn : undefined}
+                />
+              </View>
+            ) : (
+              <View style={styles.guessTimerWrap} pointerEvents="none">
+                <View style={styles.unlimitedTimerBadge}>
+                  <Text style={styles.unlimitedTimerTitle}>∞ UNLIMITED TIME</Text>
+                  <Text style={styles.unlimitedTimerSub}>
+                    {players.filter((p) => p.locked).length} / {players.length} LOCKED IN
+                  </Text>
+                </View>
+              </View>
+            )}
+
             <View
               style={[
                 styles.sliderRail,
-                sliderPosition === 'right'
-                  ? { right: 8, left: undefined }
-                  : { left: 8, right: undefined },
+                sliderPosition === 'right' ? styles.sliderRailRight : styles.sliderRailLeft,
                 {
                   top: Math.max(insets.top, 24) + 70,
                   bottom: Math.max(insets.bottom, 20) + 80,
@@ -216,7 +336,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack, sliderPosition
               {lockedIn ? (
                 <View style={styles.lockedBadge}>
                   <Text style={styles.lockedBadgeText}>
-                    ✓ GUESS LOCKED IN! WAITING FOR OTHERS...
+                    ✓ GUESS LOCKED IN! WAITING FOR OTHERS ({players.filter((p) => p.locked).length} / {players.length})...
                   </Text>
                 </View>
               ) : (
@@ -241,7 +361,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack, sliderPosition
             score={myResult.points}
             roundNumber={round}
             onNextRound={readyNextRound}
-            isLastRound={round >= 5}
+            isLastRound={round >= roomSettings.totalRounds}
             readyCount={readyPlayerIds.length}
             totalPlayers={players.length}
             hasReadied={readyPlayerIds.includes(userId)}
@@ -274,6 +394,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack, sliderPosition
               </TouchableOpacity>
             </View>
           )}
+
+        {/* Settings Modal (In-Game) */}
+        <SettingsModal
+          visible={showSettings}
+          onClose={() => setShowSettings(false)}
+          sliderPosition={sliderPosition}
+          onUpdateSliderPosition={onUpdateSliderPosition}
+        />
       </View>
     );
   }
@@ -290,14 +418,37 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack, sliderPosition
       ]}
     >
       <View style={styles.lobbyHeader}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn} activeOpacity={0.7}>
+        <TouchableOpacity
+          onPress={onBack}
+          style={styles.backBtn}
+          activeOpacity={0.7}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel="Back to home screen"
+        >
           <Text style={styles.backText}>← BACK</Text>
         </TouchableOpacity>
-        <View style={styles.statusIndicator}>
-          <View
-            style={[styles.statusDot, { backgroundColor: '#4ADE80' }]}
-          />
-          <Text style={styles.statusText}>MULTIPLAYER READY</Text>
+        <View style={styles.headerRightRow}>
+          <View style={styles.statusIndicator}>
+            <View
+              style={[styles.statusDot, { backgroundColor: connected ? '#4ADE80' : '#EF4444' }]}
+            />
+            <Text style={styles.statusText}>{connected ? 'ONLINE' : 'CONNECTING...'}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.lobbySettingsBtn}
+            onPress={() => {
+              triggerHaptic('light');
+              setShowSettings(true);
+            }}
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Game settings"
+          >
+            <Text style={styles.lobbySettingsIcon}>⚙</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -308,99 +459,386 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onBack, sliderPosition
       )}
 
       {!roomCode ? (
-        <View style={styles.card}>
-          <Text style={styles.title}>MULTIPLAYER LOBBY</Text>
-          <Text style={styles.subtitle}>Host or join a room (Up to 10 players)</Text>
+        <ScrollView
+          style={styles.lobbyScroll}
+          contentContainerStyle={styles.lobbyScrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Card 0: Selected Mode & Settings from Home */}
+          <View style={styles.selectedConfigCard}>
+            <View style={styles.selectedConfigHeader}>
+              <View style={styles.configBadge}>
+                <Text style={styles.configBadgeText}>
+                  MODE: {difficulty.toUpperCase()}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.railBadge}
+                onPress={() => {
+                  triggerHaptic('light');
+                  setShowSettings(true);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.railBadgeText}>
+                  SLIDERS: {sliderPosition.toUpperCase()} ⚙
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>YOUR DISPLAY NAME</Text>
-            <TextInput
-              style={styles.input}
-              value={playerName}
-              onChangeText={setPlayerName}
-              maxLength={12}
-              placeholder="e.g. ColorMaster"
-              placeholderTextColor="#64748B"
-            />
+            <Text style={styles.selectedConfigTitle}>ROOM CONFIGURATION</Text>
+            <Text style={styles.selectedConfigSub}>
+              Rooms you create will host with this exact mode and settings selected from Home.
+            </Text>
+
+            <View style={styles.selectedPillRow}>
+              <View style={styles.selectedPill}>
+                <Text style={styles.selectedPillVal}>{homeConfigSettings.totalRounds}</Text>
+                <Text style={styles.selectedPillLbl}>ROUNDS</Text>
+              </View>
+              <View style={styles.selectedPillDivider} />
+              <View style={styles.selectedPill}>
+                <Text style={styles.selectedPillVal}>
+                  {homeConfigSettings.previewSeconds.toFixed(1)}s
+                </Text>
+                <Text style={styles.selectedPillLbl}>PREVIEW</Text>
+              </View>
+              <View style={styles.selectedPillDivider} />
+              <View style={styles.selectedPill}>
+                <Text
+                  style={[
+                    styles.selectedPillVal,
+                    homeConfigSettings.guessSeconds <= 0 && { fontSize: 11 },
+                  ]}
+                >
+                  {homeConfigSettings.guessSeconds > 0
+                    ? `${homeConfigSettings.guessSeconds.toFixed(1)}s`
+                    : 'UNLIMITED'}
+                </Text>
+                <Text style={styles.selectedPillLbl}>GUESS TIME</Text>
+              </View>
+              <View style={styles.selectedPillDivider} />
+              <View style={styles.selectedPill}>
+                <Text style={styles.selectedPillVal}>{homeConfigSettings.totalRounds * 10}</Text>
+                <Text style={styles.selectedPillLbl}>MAX PTS</Text>
+              </View>
+            </View>
           </View>
 
-          <TouchableOpacity
-            style={[styles.hostBtn, !connected && styles.btnDisabled]}
-            onPress={() => createRoom(playerName)}
-            disabled={!connected}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.hostBtnText}>CREATE NEW ROOM</Text>
-          </TouchableOpacity>
+          {/* Card 1: Host or Join */}
+          <View style={styles.card}>
+            <Text style={styles.title}>MULTIPLAYER LOBBY</Text>
+            <Text style={styles.subtitle}>Host or join a room (Up to 10 players)</Text>
 
-          <View style={styles.divider}>
-            <View style={styles.line} />
-            <Text style={styles.dividerText}>OR ENTER CODE</Text>
-            <View style={styles.line} />
-          </View>
+            <View style={styles.inputGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>YOUR DISPLAY NAME</Text>
+                <Text
+                  style={[
+                    styles.nameStatusBadge,
+                    isCustomName ? styles.nameCustomBadge : styles.nameAutoBadge,
+                  ]}
+                >
+                  {isCustomName ? 'CUSTOM (CACHED)' : 'AUTO-GENERATED'}
+                </Text>
+              </View>
 
-          <View style={styles.joinRow}>
-            <TextInput
-              style={[styles.input, styles.codeInput]}
-              placeholder="6-DIGIT CODE"
-              placeholderTextColor="#64748B"
-              value={inputCode}
-              onChangeText={setInputCode}
-              keyboardType="number-pad"
-              maxLength={6}
-            />
+              <View style={styles.nameInputRow}>
+                <TextInput
+                  style={[styles.input, styles.nameInput]}
+                  value={playerName}
+                  onChangeText={handlePlayerNameChange}
+                  maxLength={12}
+                  placeholder="e.g. ColorMaster"
+                  placeholderTextColor="#64748B"
+                />
+                <TouchableOpacity
+                  style={styles.diceBtn}
+                  onPress={handleRandomizeName}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessible={true}
+                  accessibilityRole="button"
+                  accessibilityLabel="Generate random player name"
+                >
+                  <Text style={styles.diceIcon}>🎲</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.nameHint}>
+                {isCustomName
+                  ? 'Your custom name is saved and will be remembered.'
+                  : 'Tap 🎲 to roll another name, or edit above to customize.'}
+              </Text>
+            </View>
+
             <TouchableOpacity
-              style={[styles.joinBtn, inputCode.trim().length !== 6 && styles.btnDisabled]}
-              onPress={() => joinRoom(inputCode.trim(), playerName)}
-              disabled={inputCode.trim().length !== 6 || !connected}
+              style={[styles.hostBtn, !connected && styles.btnDisabled]}
+              onPress={() => createRoom(playerName, homeConfigSettings)}
+              disabled={!connected}
               activeOpacity={0.85}
             >
-              <Text style={styles.joinBtnText}>JOIN ROOM</Text>
+              <Text style={styles.hostBtnText}>
+                CREATE NEW ROOM ({difficulty.toUpperCase()})
+              </Text>
             </TouchableOpacity>
+
+            <View style={styles.divider}>
+              <View style={styles.line} />
+              <Text style={styles.dividerText}>OR ENTER CODE</Text>
+              <View style={styles.line} />
+            </View>
+
+            <View style={styles.joinRow}>
+              <TextInput
+                style={[styles.input, styles.codeInput]}
+                placeholder="6-DIGIT CODE"
+                placeholderTextColor="#64748B"
+                value={inputCode}
+                onChangeText={setInputCode}
+                keyboardType="number-pad"
+                maxLength={6}
+              />
+              <TouchableOpacity
+                style={[styles.joinBtn, inputCode.trim().length !== 6 && styles.btnDisabled]}
+                onPress={() => joinRoom(inputCode.trim(), playerName)}
+                disabled={inputCode.trim().length !== 6 || !connected}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.joinBtnText}>JOIN ROOM</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+
+          {/* Card 2: Multiplayer Mode Details */}
+          <View style={styles.modeDetailsCard}>
+            <View style={styles.modeHeaderRow}>
+              <View style={styles.modeTag}>
+                <Text style={styles.modeTagText}>{difficulty.toUpperCase()} BATTLE</Text>
+              </View>
+              <Text style={styles.modeCapacity}>UP TO 10 PLAYERS</Text>
+            </View>
+
+            <Text style={styles.modeTitle}>MULTIPLAYER MODE DETAILS</Text>
+            <Text style={styles.modeSubtitle}>
+              Real-time competitive color reconstruction on synchronized countdown timers.
+            </Text>
+
+            {/* 4-Item Grid with Dynamic Values */}
+            <View style={styles.specsGrid}>
+              <View style={styles.specBox}>
+                <Text style={styles.specIcon}>🔄</Text>
+                <Text style={styles.specValue}>{homeConfigSettings.totalRounds} ROUNDS</Text>
+                <Text style={styles.specLabel}>Match Length</Text>
+                <Text style={styles.specSub}>Synchronized for all</Text>
+              </View>
+
+              <View style={styles.specBox}>
+                <Text style={styles.specIcon}>👁</Text>
+                <Text style={styles.specValue}>
+                  {homeConfigSettings.previewSeconds.toFixed(1)}s
+                </Text>
+                <Text style={styles.specLabel}>Preview Time</Text>
+                <Text style={styles.specSub}>Memorize target color</Text>
+              </View>
+
+              <View style={styles.specBox}>
+                <Text style={styles.specIcon}>⏱</Text>
+                <Text
+                  style={[
+                    styles.specValue,
+                    homeConfigSettings.guessSeconds <= 0 && { fontSize: 13 },
+                  ]}
+                >
+                  {homeConfigSettings.guessSeconds > 0
+                    ? `${homeConfigSettings.guessSeconds.toFixed(1)}s`
+                    : 'UNLIMITED'}
+                </Text>
+                <Text style={styles.specLabel}>Guess Limit</Text>
+                <Text style={styles.specSub}>
+                  {homeConfigSettings.guessSeconds > 0
+                    ? 'Auto locks on timeout'
+                    : 'Locks when all submit'}
+                </Text>
+              </View>
+
+              <View style={styles.specBox}>
+                <Text style={styles.specIcon}>🎯</Text>
+                <Text style={styles.specValue}>{homeConfigSettings.totalRounds * 10} PTS</Text>
+                <Text style={styles.specLabel}>Max Score</Text>
+                <Text style={styles.specSub}>CIE ΔE accuracy</Text>
+              </View>
+            </View>
+
+            {/* Rules Breakdown */}
+            <View style={styles.rulesSection}>
+              <Text style={styles.rulesHeader}>HOW MULTIPLAYER WORKS</Text>
+
+              <View style={styles.ruleRow}>
+                <Text style={styles.ruleNumber}>1</Text>
+                <View style={styles.ruleCol}>
+                  <Text style={styles.ruleHeading}>Host Creates Room</Text>
+                  <Text style={styles.ruleDetail}>
+                    Host creates a room with the selected {difficulty.toUpperCase()} mode. Friends join instantly with the 6-digit code.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.ruleRow}>
+                <Text style={styles.ruleNumber}>2</Text>
+                <View style={styles.ruleCol}>
+                  <Text style={styles.ruleHeading}>Identical Target Colors</Text>
+                  <Text style={styles.ruleDetail}>
+                    Each round starts with a {homeConfigSettings.previewSeconds.toFixed(1)}s preview of the same secret color shown to all players simultaneously.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.ruleRow}>
+                <Text style={styles.ruleNumber}>3</Text>
+                <View style={styles.ruleCol}>
+                  <Text style={styles.ruleHeading}>Reconstruct & Lock In</Text>
+                  <Text style={styles.ruleDetail}>
+                    {homeConfigSettings.guessSeconds > 0
+                      ? `Adjust sliders (${sliderPosition.toUpperCase()} dock). Lock in early or let the ${homeConfigSettings.guessSeconds.toFixed(1)}s timer auto lock your guess.`
+                      : `Adjust sliders (${sliderPosition.toUpperCase()} dock) with unlimited time. Once every player locks in their guess, the round resolves immediately.`}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.ruleRow}>
+                <Text style={styles.ruleNumber}>4</Text>
+                <View style={styles.ruleCol}>
+                  <Text style={styles.ruleHeading}>Live Leaderboard & Podium</Text>
+                  <Text style={styles.ruleDetail}>
+                    Side-by-side color swatches and ΔE scores are revealed after each round. Final 🥇 🥈 🥉 podium crowns the champion after {homeConfigSettings.totalRounds} rounds!
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        </ScrollView>
       ) : (
-        <View style={styles.roomActiveCard}>
-          <Text style={styles.roomCodeLabel}>ROOM CODE</Text>
-          <Text style={styles.roomCodeValue}>{roomCode}</Text>
+        <ScrollView
+          style={styles.lobbyScroll}
+          contentContainerStyle={styles.lobbyScrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.roomActiveCard}>
+            <Text style={styles.roomCodeLabel}>ROOM CODE</Text>
+            <Text style={styles.roomCodeValue}>{roomCode}</Text>
 
-          {/* 1-Tap Share Room Code */}
-          <TouchableOpacity
-            style={styles.shareCodeBtn}
-            onPress={handleShareCode}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.shareCodeBtnText}>📤 SHARE 6-DIGIT CODE</Text>
-          </TouchableOpacity>
+            {/* Active Room Mode Badges */}
+            <View style={styles.roomBadgeRow}>
+              <View style={styles.configBadge}>
+                <Text style={styles.configBadgeText}>
+                  MODE: {roomSettings.difficulty.toUpperCase()}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.railBadge}
+                onPress={() => {
+                  triggerHaptic('light');
+                  setShowSettings(true);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.railBadgeText}>
+                  SLIDERS: {sliderPosition.toUpperCase()} ⚙
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-          <Text style={styles.roomShareHint}>No login needed • Friends can join with this code</Text>
+            {/* 1-Tap Share Room Code */}
+            <TouchableOpacity
+              style={styles.shareCodeBtn}
+              onPress={handleShareCode}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.shareCodeBtnText}>📤 SHARE 6-DIGIT CODE</Text>
+            </TouchableOpacity>
 
-          <View style={styles.rosterCard}>
-            <Text style={styles.rosterTitle}>CONNECTED PLAYERS ({players.length} / 10)</Text>
-            <FlatList
-              data={players}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item, index }) => (
-                <View style={styles.playerRow}>
+            <Text style={styles.roomShareHint}>No login needed • Friends can join with this code</Text>
+
+            {/* Match Specs Pill Row with Active Room Settings */}
+            <View style={styles.roomSpecsRow}>
+              <View style={styles.roomSpecBadge}>
+                <Text style={styles.roomSpecBadgeVal}>{roomSettings.totalRounds}</Text>
+                <Text style={styles.roomSpecBadgeLbl}>ROUNDS</Text>
+              </View>
+              <View style={styles.roomSpecDivider} />
+              <View style={styles.roomSpecBadge}>
+                <Text style={styles.roomSpecBadgeVal}>
+                  {roomSettings.previewSeconds.toFixed(1)}s
+                </Text>
+                <Text style={styles.roomSpecBadgeLbl}>PREVIEW</Text>
+              </View>
+              <View style={styles.roomSpecDivider} />
+              <View style={styles.roomSpecBadge}>
+                <Text
+                  style={[
+                    styles.roomSpecBadgeVal,
+                    roomSettings.guessSeconds <= 0 && { fontSize: 11 },
+                  ]}
+                >
+                  {roomSettings.guessSeconds > 0
+                    ? `${roomSettings.guessSeconds.toFixed(1)}s`
+                    : 'UNLIMITED'}
+                </Text>
+                <Text style={styles.roomSpecBadgeLbl}>GUESS TIME</Text>
+              </View>
+              <View style={styles.roomSpecDivider} />
+              <View style={styles.roomSpecBadge}>
+                <Text style={styles.roomSpecBadgeVal}>{roomSettings.totalRounds * 10}</Text>
+                <Text style={styles.roomSpecBadgeLbl}>POINTS</Text>
+              </View>
+            </View>
+
+            {/* Mode Details Callout with Active Room Rules */}
+            <View style={styles.activeModeDetailsBox}>
+              <Text style={styles.activeModeDetailsTitle}>MATCH CONFIGURATION & RULES</Text>
+              <Text style={styles.activeModeDetailsSub}>
+                • Mode: {roomSettings.difficulty.toUpperCase()} ({roomSettings.totalRounds} Synchronized Rounds){'\n'}
+                • Preview: {roomSettings.previewSeconds.toFixed(1)}s • Guess Limit: {roomSettings.guessSeconds > 0 ? `${roomSettings.guessSeconds.toFixed(1)}s (auto lock-in)` : 'Unlimited (locks when all submit)'}{'\n'}
+                • Sliders Rail: Docked on {sliderPosition.toUpperCase()} side{'\n'}
+                • Scoring: Perceptual CIE ΔE distance (0 to 10 points per round)
+              </Text>
+            </View>
+
+            <View style={styles.rosterCard}>
+              <Text style={styles.rosterTitle}>CONNECTED PLAYERS ({players.length} / 10)</Text>
+              {players.map((item, index) => (
+                <View key={item.id} style={styles.playerRow}>
                   <Text style={styles.playerIndex}>#{index + 1}</Text>
                   <Text style={styles.playerItemName}>{item.name}</Text>
                   {index === 0 && <Text style={styles.hostBadge}>HOST</Text>}
                 </View>
-              )}
-            />
-          </View>
-
-          {isHost ? (
-            <TouchableOpacity style={styles.startBtn} onPress={startMatch} activeOpacity={0.85}>
-              <Text style={styles.startBtnText}>START MATCH (5 ROUNDS)</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.waitingCard}>
-              <Text style={styles.waitingText}>Waiting for host to start the match...</Text>
+              ))}
             </View>
-          )}
-        </View>
+
+            {isHost ? (
+              <TouchableOpacity style={styles.startBtn} onPress={startMatch} activeOpacity={0.85}>
+                <Text style={styles.startBtnText}>
+                  START MATCH ({roomSettings.totalRounds} ROUNDS)
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.waitingCard}>
+                <Text style={styles.waitingText}>Waiting for host to start the match...</Text>
+              </View>
+            )}
+          </View>
+        </ScrollView>
       )}
+
+      {/* Settings Modal (Lobby) */}
+      <SettingsModal
+        visible={showSettings}
+        onClose={() => setShowSettings(false)}
+        sliderPosition={sliderPosition}
+        onUpdateSliderPosition={onUpdateSliderPosition}
+      />
     </View>
   );
 };
@@ -440,6 +878,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
+  },
+  headerRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  lobbySettingsBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#131D31',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lobbySettingsIcon: {
+    color: '#94A3B8',
+    fontSize: 16,
   },
   statusDot: {
     width: 8,
@@ -487,12 +944,55 @@ const styles = StyleSheet.create({
   inputGroup: {
     marginBottom: 16,
   },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
   label: {
     color: '#64748B',
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1.5,
-    marginBottom: 6,
+  },
+  nameStatusBadge: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  nameAutoBadge: {
+    color: '#38BDF8',
+  },
+  nameCustomBadge: {
+    color: '#10B981',
+  },
+  nameInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  nameInput: {
+    flex: 1,
+  },
+  diceBtn: {
+    width: 50,
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  diceIcon: {
+    fontSize: 20,
+  },
+  nameHint: {
+    color: '#64748B',
+    fontSize: 11,
+    marginTop: 6,
+    fontStyle: 'italic',
   },
   input: {
     backgroundColor: '#1E293B',
@@ -559,9 +1059,316 @@ const styles = StyleSheet.create({
   btnDisabled: {
     opacity: 0.5,
   },
+  lobbyScroll: {
+    flex: 1,
+    width: '100%',
+  },
+  lobbyScrollContent: {
+    paddingBottom: 32,
+  },
+  selectedConfigCard: {
+    backgroundColor: '#131D31',
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(56, 189, 248, 0.35)',
+  },
+  selectedConfigHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  configBadge: {
+    backgroundColor: '#38BDF8',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  configBadgeText: {
+    color: '#090D16',
+    fontWeight: '900',
+    fontSize: 11,
+    letterSpacing: 1,
+  },
+  railBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  railBadgeText: {
+    color: '#94A3B8',
+    fontWeight: '800',
+    fontSize: 10,
+    letterSpacing: 0.8,
+  },
+  selectedConfigTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  selectedConfigSub: {
+    color: '#94A3B8',
+    fontSize: 11,
+    marginTop: 2,
+    marginBottom: 12,
+  },
+  selectedPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    justifyContent: 'space-around',
+  },
+  selectedPill: {
+    alignItems: 'center',
+  },
+  selectedPillVal: {
+    color: '#38BDF8',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  selectedPillLbl: {
+    color: '#64748B',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginTop: 1,
+  },
+  selectedPillDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  roomBadgeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginVertical: 8,
+  },
+  guessTimerWrap: {
+    position: 'absolute',
+    top: 16,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 18,
+  },
+  unlimitedTimerBadge: {
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  unlimitedTimerTitle: {
+    color: '#38BDF8',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  unlimitedTimerSub: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 2,
+    letterSpacing: 0.5,
+  },
+  modeDetailsCard: {
+    backgroundColor: '#131D31',
+    borderRadius: 24,
+    padding: 20,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  modeHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modeTag: {
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+  },
+  modeTagText: {
+    color: '#38BDF8',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  modeCapacity: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  modeTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  modeSubtitle: {
+    color: '#94A3B8',
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 18,
+    lineHeight: 18,
+  },
+  specsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 20,
+  },
+  specBox: {
+    flex: 1,
+    minWidth: '46%',
+    backgroundColor: '#1E293B',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  specIcon: {
+    fontSize: 18,
+    marginBottom: 6,
+  },
+  specValue: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  specLabel: {
+    color: '#38BDF8',
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 2,
+    letterSpacing: 0.5,
+  },
+  specSub: {
+    color: '#64748B',
+    fontSize: 10,
+    marginTop: 2,
+  },
+  rulesSection: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    paddingTop: 16,
+    gap: 12,
+  },
+  rulesHeader: {
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 4,
+  },
+  ruleRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  ruleNumber: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#1E293B',
+    color: '#38BDF8',
+    textAlign: 'center',
+    lineHeight: 22,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  ruleCol: {
+    flex: 1,
+  },
+  ruleHeading: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  ruleDetail: {
+    color: '#94A3B8',
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  roomSpecsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E293B',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    width: '100%',
+    marginVertical: 14,
+    justifyContent: 'space-around',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  roomSpecBadge: {
+    alignItems: 'center',
+  },
+  roomSpecBadgeVal: {
+    color: '#38BDF8',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  roomSpecBadgeLbl: {
+    color: '#64748B',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginTop: 2,
+  },
+  roomSpecDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  activeModeDetailsBox: {
+    backgroundColor: 'rgba(56, 189, 248, 0.08)',
+    borderRadius: 12,
+    padding: 12,
+    width: '100%',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.2)',
+  },
+  activeModeDetailsTitle: {
+    color: '#38BDF8',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  activeModeDetailsSub: {
+    color: '#94A3B8',
+    fontSize: 11,
+    lineHeight: 17,
+  },
   roomActiveCard: {
     backgroundColor: '#131D31',
-    flex: 1,
+    width: '100%',
     padding: 24,
     borderRadius: 24,
     alignItems: 'center',
@@ -604,10 +1411,9 @@ const styles = StyleSheet.create({
   rosterCard: {
     backgroundColor: '#1E293B',
     width: '100%',
-    flex: 1,
     borderRadius: 16,
     padding: 16,
-    marginVertical: 20,
+    marginVertical: 14,
   },
   rosterTitle: {
     color: '#64748B',
@@ -676,6 +1482,11 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     zIndex: 20,
   },
+  hudLeftGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   leaveBtn: {
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
     paddingHorizontal: 14,
@@ -688,6 +1499,20 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 12,
+  },
+  inGameSettingsBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inGameSettingsIcon: {
+    color: '#FFFFFF',
+    fontSize: 16,
   },
   centerHud: {
     alignItems: 'center',
@@ -722,13 +1547,18 @@ const styles = StyleSheet.create({
   },
   sliderRail: {
     position: 'absolute',
-    left: 8,
     top: 40,
     bottom: 90,
     width: 140,
     flexDirection: 'row',
     justifyContent: 'space-between',
     zIndex: 15,
+  },
+  sliderRailLeft: {
+    left: 8,
+  },
+  sliderRailRight: {
+    right: 8,
   },
   sliderItem: {
     height: '100%',

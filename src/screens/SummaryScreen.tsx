@@ -7,6 +7,7 @@ import {
   ScrollView,
   Share,
   Platform,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RoundRecord } from './GameScreen';
@@ -21,12 +22,15 @@ interface SummaryScreenProps {
 export const SummaryScreen: React.FC<SummaryScreenProps> = ({ records, onRestart }) => {
   const insets = useSafeAreaInsets();
   const totalScore = records.reduce((sum, r) => sum + r.score, 0);
+  const totalRounds = records.length || 5;
+  const maxScore = totalRounds * 10;
 
   const getRank = (score: number) => {
-    if (score >= 46) return { title: 'Master Colorist', emoji: '🏆', color: '#FBBF24' };
-    if (score >= 38) return { title: 'Keen Eyesight', emoji: '✨', color: '#38BDF8' };
-    if (score >= 28) return { title: 'Sharp Observer', emoji: '🎯', color: '#4ADE80' };
-    if (score >= 18) return { title: 'Average Perception', emoji: '🎨', color: '#A78BFA' };
+    const pct = maxScore > 0 ? (score / maxScore) * 100 : 0;
+    if (pct >= 90) return { title: 'Master Colorist', emoji: '🏆', color: '#FBBF24' };
+    if (pct >= 75) return { title: 'Keen Eyesight', emoji: '✨', color: '#38BDF8' };
+    if (pct >= 55) return { title: 'Sharp Observer', emoji: '🎯', color: '#4ADE80' };
+    if (pct >= 35) return { title: 'Average Perception', emoji: '🎨', color: '#A78BFA' };
     return { title: 'Needs Calibration', emoji: '👀', color: '#F87171' };
   };
 
@@ -34,11 +38,15 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({ records, onRestart
 
   const handleShare = async () => {
     triggerHaptic('light');
-    const message = `I scored ${totalScore}/50 in color-fool! Can you beat my perceptual score?`;
+    const message = `I scored ${totalScore}/${maxScore} in color-fool (${totalRounds} rounds)! Can you beat my perceptual score?`;
     if (Platform.OS === 'web') {
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(message);
-        alert('Score copied to clipboard!');
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        try {
+          await navigator.clipboard.writeText(message);
+          Alert.alert('Copied!', 'Score copied to clipboard!');
+        } catch {
+          // Clipboard write failed
+        }
       }
     } else {
       try {
@@ -62,13 +70,13 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({ records, onRestart
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.title}>MATCH SUMMARY</Text>
-        <Text style={styles.sub}>5-Round Performance Breakdown</Text>
+        <Text style={styles.sub}>{totalRounds}-Round Performance Breakdown</Text>
 
         {/* Total Score Badge Card */}
         <View style={styles.totalCard}>
           <Text style={styles.rankEmoji}>{rank.emoji}</Text>
           <Text style={styles.totalScore}>{totalScore}</Text>
-          <Text style={styles.totalMax}>/ 50 TOTAL POINTS</Text>
+          <Text style={styles.totalMax}>/ {maxScore} TOTAL POINTS</Text>
           <Text style={[styles.rankTitle, { color: rank.color }]}>{rank.title}</Text>
         </View>
 
@@ -104,11 +112,25 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({ records, onRestart
 
         {/* Actions */}
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.shareBtn} onPress={handleShare} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={styles.shareBtn}
+            onPress={handleShare}
+            activeOpacity={0.85}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Share your match score"
+          >
             <Text style={styles.shareText}>SHARE SCORE</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.restartBtn} onPress={onRestart} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={styles.restartBtn}
+            onPress={onRestart}
+            activeOpacity={0.85}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Play another match"
+          >
             <Text style={styles.restartText}>PLAY AGAIN</Text>
           </TouchableOpacity>
         </View>

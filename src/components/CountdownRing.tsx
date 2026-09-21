@@ -3,10 +3,17 @@ import { View, Text, StyleSheet } from 'react-native';
 
 interface CountdownRingProps {
   durationSeconds: number;
+  label?: string;
+  size?: 'normal' | 'compact';
   onFinish?: () => void;
 }
 
-export const CountdownRing: React.FC<CountdownRingProps> = ({ durationSeconds, onFinish }) => {
+export const CountdownRing: React.FC<CountdownRingProps> = ({
+  durationSeconds,
+  label = 'MEMORIZE COLOR',
+  size = 'normal',
+  onFinish,
+}) => {
   const [timeLeft, setTimeLeft] = useState(durationSeconds);
   const onFinishRef = useRef(onFinish);
   onFinishRef.current = onFinish;
@@ -32,10 +39,14 @@ export const CountdownRing: React.FC<CountdownRingProps> = ({ durationSeconds, o
     return () => clearInterval(interval);
   }, [durationSeconds]);
 
+  const isCompact = size === 'compact';
+
   return (
-    <View style={styles.badge}>
-      <Text style={styles.timerText}>{timeLeft.toFixed(1)}s</Text>
-      <Text style={styles.subText}>MEMORIZE COLOR</Text>
+    <View style={[styles.badge, isCompact && styles.badgeCompact]}>
+      <Text style={[styles.timerText, isCompact && styles.timerTextCompact]}>
+        {timeLeft.toFixed(1)}s
+      </Text>
+      <Text style={[styles.subText, isCompact && styles.subTextCompact]}>{label}</Text>
     </View>
   );
 };
@@ -67,5 +78,18 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 2,
     marginTop: 4,
+  },
+  badgeCompact: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  timerTextCompact: {
+    fontSize: 20,
+  },
+  subTextCompact: {
+    fontSize: 8.5,
+    marginTop: 1,
+    letterSpacing: 1.2,
   },
 });

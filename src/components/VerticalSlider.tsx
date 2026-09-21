@@ -10,21 +10,29 @@ interface VerticalSliderProps {
   colors: string[];
   onChange: (val: number) => void;
   width?: number;
+  label?: string;
 }
 
-export const VerticalSlider: React.FC<VerticalSliderProps> = ({
+export const VerticalSlider: React.FC<VerticalSliderProps> = React.memo(({
   value,
   min,
   max,
   colors,
   onChange,
   width = 34,
+  label = 'Color slider',
 }) => {
   const [trackHeight, setTrackHeight] = useState<number>(300);
   const trackHeightRef = useRef<number>(300);
   const trackPageYRef = useRef<number>(0);
   const containerRef = useRef<View>(null);
   const lastStepRef = useRef<number>(value);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const minRef = useRef(min);
+  minRef.current = min;
+  const maxRef = useRef(max);
+  maxRef.current = max;
 
   const normalize = (val: number) => {
     return Math.max(0, Math.min(1, (val - min) / (max - min)));
@@ -34,7 +42,7 @@ export const VerticalSlider: React.FC<VerticalSliderProps> = ({
     const relativeY = pageY - trackPageYRef.current;
     const clampedY = Math.max(0, Math.min(trackHeightRef.current, relativeY));
     const ratio = clampedY / (trackHeightRef.current || 1);
-    const computedVal = min + ratio * (max - min);
+    const computedVal = minRef.current + ratio * (maxRef.current - minRef.current);
     const rounded = Math.round(computedVal);
 
     if (Math.abs(rounded - lastStepRef.current) >= 3) {
@@ -42,7 +50,7 @@ export const VerticalSlider: React.FC<VerticalSliderProps> = ({
       lastStepRef.current = rounded;
     }
 
-    onChange(rounded);
+    onChangeRef.current(rounded);
   };
 
   const panResponder = useRef(
@@ -76,12 +84,25 @@ export const VerticalSlider: React.FC<VerticalSliderProps> = ({
 
   const knobPosition = normalize(value) * trackHeight;
   const knobSize = 26;
+  const stepSize = Math.max(1, Math.round((max - min) / 20));
 
   return (
     <View
       ref={containerRef}
       style={[styles.container, { width }]}
       onLayout={onLayout}
+      accessible={true}
+      accessibilityRole="adjustable"
+      accessibilityLabel={label}
+      accessibilityValue={{ min, max, now: value }}
+      accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === 'increment') {
+          onChangeRef.current(Math.min(maxRef.current, value + stepSize));
+        } else if (event.nativeEvent.actionName === 'decrement') {
+          onChangeRef.current(Math.max(minRef.current, value - stepSize));
+        }
+      }}
       {...panResponder.panHandlers}
     >
       <LinearGradient
@@ -104,7 +125,7 @@ export const VerticalSlider: React.FC<VerticalSliderProps> = ({
       />
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

@@ -1,7 +1,13 @@
 import { useState, useCallback } from 'react';
 import { HSLColor } from '../utils/colorScorer';
 
-export type Difficulty = 'easy' | 'medium' | 'hard';
+export type Difficulty = 'easy' | 'medium' | 'hard' | 'custom';
+
+export interface CustomGameConfig {
+  previewSeconds: number; // 0.5 to 99.0
+  guessSeconds: number;   // 0.5 to 99.0
+  rounds: number;         // 1 to 30
+}
 
 export interface DifficultyConfig {
   previewSeconds: number;
@@ -11,7 +17,7 @@ export interface DifficultyConfig {
   lMax: number;
 }
 
-export const DIFFICULTY_CONFIG: Record<Difficulty, DifficultyConfig> = {
+export const DIFFICULTY_CONFIG: Record<Exclude<Difficulty, 'custom'>, DifficultyConfig> = {
   easy: {
     previewSeconds: 5.0,
     sMin: 40,
@@ -36,7 +42,7 @@ export const DIFFICULTY_CONFIG: Record<Difficulty, DifficultyConfig> = {
 };
 
 export function generateRandomTarget(difficulty: Difficulty): HSLColor {
-  const cfg = DIFFICULTY_CONFIG[difficulty];
+  const cfg = difficulty === 'custom' ? DIFFICULTY_CONFIG.medium : DIFFICULTY_CONFIG[difficulty];
   const h = Math.floor(Math.random() * 360);
   const s = Math.floor(cfg.sMin + Math.random() * (cfg.sMax - cfg.sMin + 1));
   const l = Math.floor(cfg.lMin + Math.random() * (cfg.lMax - cfg.lMin + 1));

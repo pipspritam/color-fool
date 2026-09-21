@@ -31,15 +31,39 @@ export const ResultSplit: React.FC<ResultSplitProps> = ({
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(insets.top, 24) + 64;
 
-  const isMultiplayer = totalPlayers !== undefined && totalPlayers > 1;
+  const isMultiplayer = totalPlayers !== undefined && totalPlayers > 0;
+
+  const [secondsLeft, setSecondsLeft] = React.useState(5);
+  const hasTriggeredNextRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!isMultiplayer || hasReadied || hasTriggeredNextRef.current) return;
+
+    if (secondsLeft <= 0) {
+      hasTriggeredNextRef.current = true;
+      onNextRound();
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setSecondsLeft((prev) => Math.max(0, prev - 1));
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [isMultiplayer, hasReadied, secondsLeft, onNextRound]);
+
+  const handleNextRoundPress = () => {
+    hasTriggeredNextRef.current = true;
+    onNextRound();
+  };
 
   let buttonLabel = isLastRound ? 'VIEW MATCH SUMMARY →' : 'NEXT ROUND →';
   if (isMultiplayer) {
     if (hasReadied) {
       buttonLabel = `✓ READY! (${readyCount}/${totalPlayers} WAITING...)`;
     } else {
-      const actionName = isLastRound ? 'VIEW MATCH SUMMARY' : 'NEXT ROUND';
-      buttonLabel = `${actionName} (${readyCount}/${totalPlayers} READY)`;
+      const actionName = isLastRound ? 'VIEW SUMMARY' : 'NEXT COLOR';
+      buttonLabel = `${actionName} (${readyCount}/${totalPlayers} READY • ${secondsLeft}s)`;
     }
   }
 
@@ -85,9 +109,12 @@ export const ResultSplit: React.FC<ResultSplitProps> = ({
             styles.button,
             isMultiplayer && hasReadied && styles.buttonReadied,
           ]}
-          onPress={onNextRound}
+          onPress={handleNextRoundPress}
           disabled={isMultiplayer && hasReadied}
           activeOpacity={0.85}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel={buttonLabel}
         >
           <Text
             style={[
@@ -98,6 +125,14 @@ export const ResultSplit: React.FC<ResultSplitProps> = ({
             {buttonLabel}
           </Text>
         </TouchableOpacity>
+
+        {isMultiplayer && (
+          <Text style={styles.autoAdvanceHint}>
+            {hasReadied
+              ? 'Waiting for remaining players to advance...'
+              : `Tap to continue immediately or auto-advancing in ${secondsLeft}s`}
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -224,5 +259,12 @@ const styles = StyleSheet.create({
   buttonTextReadied: {
     color: '#4ADE80',
     letterSpacing: 0.8,
+  },
+  autoAdvanceHint: {
+    color: '#94A3B8',
+    fontSize: 11,
+    marginTop: 10,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

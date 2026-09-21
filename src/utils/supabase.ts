@@ -27,11 +27,7 @@ export function getSupabaseClient(url = currentUrl, key = currentKey) {
   });
 }
 
-export let supabase = getSupabaseClient();
-
-export function updateSupabaseConfig(url: string, key: string) {
-  supabase = getSupabaseClient(url, key);
-}
+export const supabase = getSupabaseClient();
 
 export function isSupabaseConfigured(): boolean {
   return (

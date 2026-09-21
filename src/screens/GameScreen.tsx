@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, BackHandler, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VerticalSlider } from '../components/VerticalSlider';
 import { CountdownRing } from '../components/CountdownRing';
 import { ResultSplit } from '../components/ResultSplit';
+import { SettingsModal } from '../components/SettingsModal';
 import {
   useColorState,
   Difficulty,
+  CustomGameConfig,
   DIFFICULTY_CONFIG,
   generateRandomTarget,
 } from '../hooks/useColorState';
@@ -22,14 +24,18 @@ export interface RoundRecord {
 
 interface GameScreenProps {
   difficulty: Difficulty;
+  customConfig?: CustomGameConfig;
   sliderPosition?: 'left' | 'right';
+  onUpdateSliderPosition?: (pos: 'left' | 'right') => void;
   onFinishGame: (records: RoundRecord[]) => void;
   onExit: () => void;
 }
 
 export const GameScreen: React.FC<GameScreenProps> = ({
   difficulty,
+  customConfig,
   sliderPosition = 'left',
+  onUpdateSliderPosition,
   onFinishGame,
   onExit,
 }) => {
@@ -38,10 +44,37 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [phase, setPhase] = useState<'preview' | 'guess' | 'result'>('preview');
   const [target, setTarget] = useState<HSLColor>(() => generateRandomTarget(difficulty));
   const [records, setRecords] = useState<RoundRecord[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
+  const isMountedRef = useRef(false);
 
   const { guess, setHue, setSaturation, setLightness, resetGuess } = useColorState();
 
   const totalScore = records.reduce((sum, r) => sum + r.score, 0);
+
+  const totalRounds = difficulty === 'custom' && customConfig ? customConfig.rounds : 5;
+
+  const previewDuration =
+    difficulty === 'custom' && customConfig
+      ? customConfig.previewSeconds
+      : DIFFICULTY_CONFIG[difficulty as Exclude<Difficulty, 'custom'>].previewSeconds;
+
+  // Intercept Android hardware back button
+  useEffect(() => {
+    const onBackPress = () => {
+      Alert.alert(
+        'Exit Match?',
+        'Your current match progress will be lost.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Exit', style: 'destructive', onPress: onExit },
+        ]
+      );
+      return true;
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [onExit]);
 
   // Initialize round
   const startRound = useCallback((roundNum: number) => {
@@ -52,6 +85,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   }, [difficulty, resetGuess]);
 
   useEffect(() => {
+    if (!isMountedRef.current) {
+      isMountedRef.current = true;
+      return;
+    }
     startRound(round);
   }, [round, startRound]);
 
@@ -60,7 +97,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setPhase('guess');
   };
 
-  const handleLockIn = () => {
+  const handleLockIn = useCallback(() => {
+    if (phase !== 'guess') return;
     triggerHaptic('success');
     const deltaE = calculateDeltaE(target, guess);
     const score = scoreFromDeltaE(deltaE);
@@ -68,10 +106,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     const record: RoundRecord = { target, guess, deltaE, score };
     setRecords((prev) => [...prev, record]);
     setPhase('result');
-  };
+  }, [phase, target, guess]);
 
   const handleNextRound = () => {
-    if (round >= 5) {
+    if (round >= totalRounds) {
       onFinishGame(records);
     } else {
       setRound((prev) => prev + 1);
@@ -79,26 +117,20 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   };
 
   // Dynamic gradient colors for sliders
-  const hueColors = [
-    '#ff0000',
-    '#ffff00',
-    '#00ff00',
-    '#00ffff',
-    '#0000ff',
-    '#ff00ff',
-    '#ff0000',
-  ];
+  const hueColors = useMemo(
+    () => ['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ff0000'],
+    []
+  );
 
-  const satColors = [
-    `hsl(${guess.h}, 0%, ${guess.l}%)`,
-    `hsl(${guess.h}, 100%, ${guess.l}%)`,
-  ];
+  const satColors = useMemo(
+    () => [`hsl(${guess.h}, 0%, ${guess.l}%)`, `hsl(${guess.h}, 100%, ${guess.l}%)`],
+    [guess.h, guess.l]
+  );
 
-  const lightColors = [
-    '#000000',
-    `hsl(${guess.h}, ${guess.s}%, 50%)`,
-    '#ffffff',
-  ];
+  const lightColors = useMemo(
+    () => ['#000000', `hsl(${guess.h}, ${guess.s}%, 50%)`, '#ffffff'],
+    [guess.h, guess.s]
+  );
 
   // Active background color: Target during preview, User's guess during Guess
   const backgroundColor =
@@ -120,18 +152,38 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           style={styles.exitBtn}
           activeOpacity={0.7}
           hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel="Exit match"
         >
           <Text style={styles.exitText}>✕</Text>
         </TouchableOpacity>
 
         <View style={styles.hudCenter}>
           <Text style={styles.hudTitle}>color-fool</Text>
-          <Text style={styles.hudRound}>ROUND {round} / 5</Text>
+          <Text style={styles.hudRound}>ROUND {round} / {totalRounds}</Text>
         </View>
 
-        <View style={styles.hudScoreBox}>
-          <Text style={styles.hudScoreLabel}>SCORE</Text>
-          <Text style={styles.hudScoreVal}>{totalScore}</Text>
+        <View style={styles.hudRight}>
+          <TouchableOpacity
+            style={styles.hudSettingsBtn}
+            onPress={() => {
+              triggerHaptic('light');
+              setShowSettings(true);
+            }}
+            activeOpacity={0.7}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Game settings"
+          >
+            <Text style={styles.hudSettingsIcon}>⚙</Text>
+          </TouchableOpacity>
+
+          <View style={styles.hudScoreBox}>
+            <Text style={styles.hudScoreLabel}>SCORE</Text>
+            <Text style={styles.hudScoreVal}>{totalScore}</Text>
+          </View>
         </View>
       </View>
 
@@ -139,7 +191,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       {phase === 'preview' && (
         <View style={styles.previewContainer}>
           <CountdownRing
-            durationSeconds={DIFFICULTY_CONFIG[difficulty].previewSeconds}
+            durationSeconds={previewDuration}
+            label="MEMORIZE COLOR"
             onFinish={handlePreviewDone}
           />
         </View>
@@ -148,13 +201,23 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       {/* Phase 2: Full-screen interactive guess */}
       {phase === 'guess' && (
         <View style={styles.guessArea}>
+          {/* Custom Guess Time Limit Floating Countdown */}
+          {difficulty === 'custom' && !!customConfig && (
+            <View style={styles.guessTimerWrap} pointerEvents="none">
+              <CountdownRing
+                durationSeconds={customConfig.guessSeconds}
+                label="TIME REMAINING"
+                size="compact"
+                onFinish={handleLockIn}
+              />
+            </View>
+          )}
+
           {/* 3 Vertical Gesture Sliders (Left or Right based on sliderPosition) */}
           <View
             style={[
               styles.sliderRail,
-              sliderPosition === 'right'
-                ? { right: 8, left: undefined }
-                : { left: 8, right: undefined },
+              sliderPosition === 'right' ? styles.sliderRailRight : styles.sliderRailLeft,
               {
                 top: Math.max(insets.top, 24) + 68,
                 bottom: Math.max(insets.bottom, 20) + 80,
@@ -169,6 +232,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 colors={hueColors}
                 onChange={setHue}
                 width={34}
+                label="Hue slider"
               />
               <Text style={styles.sliderLabel}>H</Text>
             </View>
@@ -181,6 +245,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 colors={satColors}
                 onChange={setSaturation}
                 width={34}
+                label="Saturation slider"
               />
               <Text style={styles.sliderLabel}>S</Text>
             </View>
@@ -193,6 +258,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 colors={lightColors}
                 onChange={setLightness}
                 width={34}
+                label="Lightness slider"
               />
               <Text style={styles.sliderLabel}>L</Text>
             </View>
@@ -211,6 +277,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               style={styles.lockInBtn}
               onPress={handleLockIn}
               activeOpacity={0.8}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Lock in guess"
             >
               <Text style={styles.lockInText}>LOCK IN GUESS</Text>
             </TouchableOpacity>
@@ -227,9 +296,17 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           score={records[round - 1].score}
           roundNumber={round}
           onNextRound={handleNextRound}
-          isLastRound={round >= 5}
+          isLastRound={round >= totalRounds}
         />
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        visible={showSettings}
+        onClose={() => setShowSettings(false)}
+        sliderPosition={sliderPosition}
+        onUpdateSliderPosition={onUpdateSliderPosition}
+      />
     </View>
   );
 };
@@ -286,6 +363,25 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
+  hudRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  hudSettingsBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hudSettingsIcon: {
+    color: '#FFFFFF',
+    fontSize: 16,
+  },
   hudScoreBox: {
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
     paddingHorizontal: 14,
@@ -314,15 +410,28 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
   },
+  guessTimerWrap: {
+    position: 'absolute',
+    top: 16,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 18,
+  },
   sliderRail: {
     position: 'absolute',
-    left: 8,
     top: 40,
     bottom: 90,
     width: 140,
     flexDirection: 'row',
     justifyContent: 'space-between',
     zIndex: 15,
+  },
+  sliderRailLeft: {
+    left: 8,
+  },
+  sliderRailRight: {
+    right: 8,
   },
   sliderItem: {
     height: '100%',

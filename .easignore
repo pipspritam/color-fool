@@ -3,3 +3,12 @@ node_modules/
 server/
 .git/
 .expo/
+*.jks
+*.keystore
+*.pem
+*.p8
+*.p12
+*.key
+.env*
+!app.json
+

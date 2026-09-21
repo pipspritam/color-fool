@@ -3,6 +3,9 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../utils/supabase';
 import { HSLColor, calculateDeltaE, scoreFromDeltaE } from '../utils/colorScorer';
 import { PlayerScore } from '../components/Leaderboard';
+import { Difficulty, generateRandomTarget } from './useColorState';
+import { generateAutoPlayerName } from '../utils/storage';
+import { triggerHaptic } from '../utils/haptics';
 
 export interface RoundResultData {
   id: string;
@@ -11,6 +14,13 @@ export interface RoundResultData {
   deltaE: number;
   points: number;
   totalScore: number;
+}
+
+export interface MultiplayerRoomSettings {
+  difficulty: Difficulty;
+  previewSeconds: number;
+  guessSeconds: number;
+  totalRounds: number;
 }
 
 export function useMultiplayer() {
@@ -27,17 +37,32 @@ export function useMultiplayer() {
   const [roundResults, setRoundResults] = useState<RoundResultData[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [readyPlayerIds, setReadyPlayerIds] = useState<string[]>([]);
+  const [roomSettings, setRoomSettings] = useState<MultiplayerRoomSettings>({
+    difficulty: 'medium',
+    previewSeconds: 3.0,
+    guessSeconds: 0,
+    totalRounds: 5,
+  });
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const userIdRef = useRef<string>(`user_${Math.random().toString(36).slice(2, 9)}`);
-  const playerNameRef = useRef<string>('Golumolu');
+  const playerNameRef = useRef<string>(generateAutoPlayerName());
   const isHostRef = useRef(false);
   const roundTimerRef = useRef<any>(null);
+  const autoAdvanceTimerRef = useRef<any>(null);
+  const previewTimerRef = useRef<any>(null);
   const currentTargetRef = useRef<HSLColor>({ h: 0, s: 0, l: 50 });
   const roundRef = useRef(1);
+  const roomSettingsRef = useRef<MultiplayerRoomSettings>({
+    difficulty: 'medium',
+    previewSeconds: 3.0,
+    guessSeconds: 0,
+    totalRounds: 5,
+  });
   const submissionsRef = useRef<Map<string, HSLColor>>(new Map());
   const scoresRef = useRef<Map<string, number>>(new Map());
   const readyPlayerIdsRef = useRef<Set<string>>(new Set());
+  const playersRef = useRef<PlayerScore[]>([]);
 
   const advanceRoundRef = useRef<() => void>(() => {});
   const resolveRoundRef = useRef<() => void>(() => {});
@@ -51,10 +76,20 @@ export function useMultiplayer() {
   useEffect(() => {
     return () => {
       if (channelRef.current) {
-        channelRef.current.unsubscribe();
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
       if (roundTimerRef.current) {
         clearTimeout(roundTimerRef.current);
+        roundTimerRef.current = null;
+      }
+      if (previewTimerRef.current) {
+        clearTimeout(previewTimerRef.current);
+        previewTimerRef.current = null;
+      }
+      if (autoAdvanceTimerRef.current) {
+        clearTimeout(autoAdvanceTimerRef.current);
+        autoAdvanceTimerRef.current = null;
       }
     };
   }, []);
@@ -62,6 +97,19 @@ export function useMultiplayer() {
   // Host: resolve round
   const resolveRound = useCallback(() => {
     if (!channelRef.current || !isHostRef.current) return;
+
+    if (roundTimerRef.current) {
+      clearTimeout(roundTimerRef.current);
+      roundTimerRef.current = null;
+    }
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
 
     const results: RoundResultData[] = [];
     const channel = channelRef.current;
@@ -71,13 +119,25 @@ export function useMultiplayer() {
     readyPlayerIdsRef.current.clear();
     setReadyPlayerIds([]);
 
-    // Build results from latest player presence
+    // Build results from latest player presence and local roster
     const state = channel.presenceState();
     const currentPresences = Object.values(state).flat() as any[];
 
+    // Collect all active player identities
+    const playerMap = new Map<string, { id: string; name: string }>();
+    for (const p of currentPresences) {
+      if (p && p.id) playerMap.set(p.id, { id: p.id, name: p.name || 'Player' });
+    }
+    for (const p of playersRef.current) {
+      if (p && p.id && !playerMap.has(p.id)) playerMap.set(p.id, { id: p.id, name: p.name || 'Player' });
+    }
+    if (!playerMap.has(userIdRef.current)) {
+      playerMap.set(userIdRef.current, { id: userIdRef.current, name: playerNameRef.current });
+    }
+
     const updatedPlayers: PlayerScore[] = [];
 
-    for (const p of currentPresences) {
+    for (const p of playerMap.values()) {
       const pGuess = submissionsRef.current.get(p.id) || { h: 180, s: 50, l: 50 };
       const deltaE = calculateDeltaE(target, pGuess);
       const points = scoreFromDeltaE(deltaE);
@@ -104,8 +164,12 @@ export function useMultiplayer() {
       });
     }
 
+    results.sort((a, b) => b.points - a.points);
+    updatedPlayers.sort((a, b) => b.score - a.score);
+
     setRoundResults(results);
     setPlayers(updatedPlayers);
+    playersRef.current = updatedPlayers;
     setGameState('result');
 
     // Broadcast results to all players
@@ -114,12 +178,30 @@ export function useMultiplayer() {
       event: 'ROUND_RESULTS',
       payload: { results, players: updatedPlayers },
     });
+
+    // Auto-advance safety timer (6 seconds): advances to next color if players don't manually tap
+    autoAdvanceTimerRef.current = setTimeout(() => {
+      advanceRoundRef.current();
+    }, 6000);
   }, []);
 
   // Host: advance or start round
   const advanceRound = useCallback(() => {
     if (!channelRef.current || !isHostRef.current) return;
     const channel = channelRef.current;
+
+    if (roundTimerRef.current) {
+      clearTimeout(roundTimerRef.current);
+      roundTimerRef.current = null;
+    }
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
 
     // Reset ready tracking for the upcoming round
     readyPlayerIdsRef.current.clear();
@@ -129,7 +211,9 @@ export function useMultiplayer() {
     roundRef.current = nextRound;
     setRound(nextRound);
 
-    if (nextRound > 5) {
+    const maxRounds = roomSettingsRef.current.totalRounds || 5;
+
+    if (nextRound > maxRounds) {
       setGameState('summary');
       const state = channel.presenceState();
       const currentPresences = Object.values(state).flat() as any[];
@@ -148,60 +232,123 @@ export function useMultiplayer() {
       return;
     }
 
-    // Reset submissions
+    // Reset submissions and locked status
     submissionsRef.current.clear();
+    setPlayers((prev) => prev.map((p) => ({ ...p, locked: false })));
+    if (playersRef.current) {
+      playersRef.current = playersRef.current.map((p) => ({ ...p, locked: false }));
+    }
 
-    // Generate random target
-    const newTarget = {
-      h: Math.floor(Math.random() * 360),
-      s: Math.floor(20 + Math.random() * 75),
-      l: Math.floor(20 + Math.random() * 65),
-    };
+    // Generate random target with selected room difficulty
+    const newTarget = generateRandomTarget(roomSettingsRef.current.difficulty);
     currentTargetRef.current = newTarget;
     setCurrentTarget(newTarget);
     setGameState('preview');
 
-    // Broadcast preview to room
+    const previewMs = Math.round((roomSettingsRef.current.previewSeconds || 3.0) * 1000);
+    const isUnlimitedGuess =
+      !roomSettingsRef.current.guessSeconds || roomSettingsRef.current.guessSeconds <= 0;
+    const guessMs = isUnlimitedGuess ? 0 : Math.round(roomSettingsRef.current.guessSeconds * 1000);
+
+    // Broadcast preview to room with active match settings
     channel.send({
       type: 'broadcast',
       event: 'ROUND_PREVIEW',
-      payload: { target: newTarget, duration: 3000, round: nextRound },
+      payload: {
+        target: newTarget,
+        duration: previewMs,
+        guessTimeout: guessMs,
+        round: nextRound,
+        totalRounds: maxRounds,
+        difficulty: roomSettingsRef.current.difficulty,
+      },
     });
 
-    // After 3s preview, broadcast guess start
-    setTimeout(() => {
+    // After preview, broadcast guess start
+    previewTimerRef.current = setTimeout(() => {
+      previewTimerRef.current = null;
       setGameState('guessing');
       channel.send({
         type: 'broadcast',
         event: 'START_GUESSING',
-        payload: { timeout: 15000 },
+        payload: { timeout: guessMs },
       });
 
-      // 15-second guess timer
-      roundTimerRef.current = setTimeout(() => {
-        resolveRoundRef.current();
-      }, 15000);
-    }, 3000);
+      // guess timer only when not unlimited
+      if (roundTimerRef.current) {
+        clearTimeout(roundTimerRef.current);
+        roundTimerRef.current = null;
+      }
+      if (guessMs > 0) {
+        roundTimerRef.current = setTimeout(() => {
+          resolveRoundRef.current();
+        }, guessMs);
+      }
+    }, previewMs);
   }, []);
 
   resolveRoundRef.current = resolveRound;
   advanceRoundRef.current = advanceRound;
 
+  const checkAllSubmitted = useCallback((channel: RealtimeChannel) => {
+    if (!isHostRef.current) return;
+    const state = channel.presenceState();
+    const presences = Object.values(state).flat() as any[];
+    const activeIds = new Set<string>();
+    for (const p of presences) {
+      if (p && p.id) activeIds.add(p.id);
+    }
+    for (const p of playersRef.current) {
+      if (p && p.id) activeIds.add(p.id);
+    }
+    activeIds.add(userIdRef.current);
+
+    if (activeIds.size === 0) return;
+
+    const allSubmitted = Array.from(activeIds).every((id) => submissionsRef.current.has(id));
+
+    if (allSubmitted) {
+      if (roundTimerRef.current) {
+        clearTimeout(roundTimerRef.current);
+        roundTimerRef.current = null;
+      }
+      resolveRoundRef.current();
+    }
+  }, []);
+
   const checkAllReady = useCallback((channel: RealtimeChannel) => {
     if (!isHostRef.current) return;
     const state = channel.presenceState();
     const presences = Object.values(state).flat() as any[];
-    const count = presences.length;
-    if (count > 0 && readyPlayerIdsRef.current.size >= count) {
+    const activeIds = new Set<string>();
+    for (const p of presences) {
+      if (p && p.id) activeIds.add(p.id);
+    }
+    for (const p of playersRef.current) {
+      if (p && p.id) activeIds.add(p.id);
+    }
+    activeIds.add(userIdRef.current);
+
+    if (activeIds.size > 0 && Array.from(activeIds).every((id) => readyPlayerIdsRef.current.has(id))) {
+      if (autoAdvanceTimerRef.current) {
+        clearTimeout(autoAdvanceTimerRef.current);
+        autoAdvanceTimerRef.current = null;
+      }
       advanceRoundRef.current();
     }
   }, []);
 
   // Connect to room channel
   const setupChannel = useCallback(
-    (code: string, asHost: boolean, pName: string) => {
+    (code: string, asHost: boolean, pName: string, hostSettings?: MultiplayerRoomSettings) => {
       if (channelRef.current) {
-        channelRef.current.unsubscribe();
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+
+      if (hostSettings) {
+        setRoomSettings(hostSettings);
+        roomSettingsRef.current = hostSettings;
       }
 
       const channelName = `room-${code}`;
@@ -214,10 +361,56 @@ export function useMultiplayer() {
 
       channelRef.current = channel;
 
-      // 1. Presence: sync players list
+      // 1. Presence: sync players list and host settings
       channel.on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
         const presences = Object.values(state).flat() as any[];
+
+        // DUPLICATE NAME ENFORCEMENT
+        // A) Guest-side check: if any other connected player already has our chosen name
+        if (!asHost && !isHostRef.current) {
+          const myNameLower = pName.trim().toLowerCase();
+          const duplicate = presences.find(
+            (p) => p.id !== userIdRef.current && (p.name || '').trim().toLowerCase() === myNameLower
+          );
+          if (duplicate) {
+            channel.untrack();
+            channel.unsubscribe();
+            channelRef.current = null;
+            setRoomCode(null);
+            setIsHost(false);
+            isHostRef.current = false;
+            setPlayers([]);
+            setErrorMessage(
+              `The name "${pName}" is already taken in this room. Please choose a different name.`
+            );
+            triggerHaptic('warning');
+            return;
+          }
+        }
+
+        // B) Host-side check: detect if any joiner matches an existing player's name
+        if (isHostRef.current) {
+          const nameMap = new Map<string, string[]>();
+          for (const p of presences) {
+            const lower = (p.name || '').trim().toLowerCase();
+            if (!lower) continue;
+            if (!nameMap.has(lower)) nameMap.set(lower, []);
+            nameMap.get(lower)!.push(p.id);
+          }
+          for (const [, ids] of nameMap.entries()) {
+            if (ids.length > 1) {
+              const duplicateId = ids.find((id) => id !== userIdRef.current) || ids[ids.length - 1];
+              const duplicatePresence = presences.find((p) => p.id === duplicateId);
+              const duplicateName = duplicatePresence?.name || pName;
+              channel.send({
+                type: 'broadcast',
+                event: 'DUPLICATE_NAME_REJECTED',
+                payload: { rejectedUserId: duplicateId, name: duplicateName },
+              });
+            }
+          }
+        }
 
         const roster: PlayerScore[] = presences.map((p) => ({
           id: p.id,
@@ -227,6 +420,7 @@ export function useMultiplayer() {
         }));
 
         setPlayers(roster);
+        playersRef.current = roster;
 
         // First presence is host if current host leaves
         if (presences.length > 0 && presences[0].id === userIdRef.current) {
@@ -234,19 +428,63 @@ export function useMultiplayer() {
           isHostRef.current = true;
         }
 
-        // If host and players disconnected during results, check if remaining are ready
+        // Sync roomSettings from host presence if present
+        const hostPresence = presences.find((p) => p.isHost && p.roomSettings);
+        if (hostPresence && hostPresence.roomSettings) {
+          setRoomSettings(hostPresence.roomSettings);
+          roomSettingsRef.current = hostPresence.roomSettings;
+        }
+
+        // If host and players disconnected during guessing or results, check if remaining are done
+        checkAllSubmitted(channel);
         checkAllReady(channel);
       });
 
       // 2. Broadcasts
+      channel.on('broadcast', { event: 'DUPLICATE_NAME_REJECTED' }, ({ payload }) => {
+        if (payload.rejectedUserId === userIdRef.current) {
+          channel.untrack();
+          channel.unsubscribe();
+          channelRef.current = null;
+          setRoomCode(null);
+          setIsHost(false);
+          isHostRef.current = false;
+          setPlayers([]);
+          setErrorMessage(
+            `The name "${payload.name}" is already taken in this room. Please choose a different name.`
+          );
+          triggerHaptic('warning');
+        }
+      });
+
       channel.on('broadcast', { event: 'ROUND_PREVIEW' }, ({ payload }) => {
+        if (autoAdvanceTimerRef.current) {
+          clearTimeout(autoAdvanceTimerRef.current);
+          autoAdvanceTimerRef.current = null;
+        }
         readyPlayerIdsRef.current.clear();
         setReadyPlayerIds([]);
+        submissionsRef.current.clear();
+        setPlayers((prev) => prev.map((p) => ({ ...p, locked: false })));
+        if (playersRef.current) {
+          playersRef.current = playersRef.current.map((p) => ({ ...p, locked: false }));
+        }
         setCurrentTarget(payload.target);
         currentTargetRef.current = payload.target;
         setPreviewDuration(payload.duration / 1000);
         setRound(payload.round);
         roundRef.current = payload.round;
+        if (payload.totalRounds) {
+          const syncedSettings: MultiplayerRoomSettings = {
+            totalRounds: payload.totalRounds,
+            previewSeconds: payload.duration / 1000,
+            guessSeconds:
+              payload.guessTimeout && payload.guessTimeout > 0 ? payload.guessTimeout / 1000 : 0,
+            difficulty: payload.difficulty || 'medium',
+          };
+          setRoomSettings(syncedSettings);
+          roomSettingsRef.current = syncedSettings;
+        }
         setGameState('preview');
       });
 
@@ -257,20 +495,18 @@ export function useMultiplayer() {
       channel.on('broadcast', { event: 'SUBMIT_GUESS' }, ({ payload }) => {
         submissionsRef.current.set(payload.userId, payload.guess);
 
-        // Update locked status in UI
+        // Update locked status in UI and ref
         setPlayers((prev) =>
           prev.map((p) => (p.id === payload.userId ? { ...p, locked: true } : p))
         );
+        if (playersRef.current) {
+          playersRef.current = playersRef.current.map((p) =>
+            p.id === payload.userId ? { ...p, locked: true } : p
+          );
+        }
 
         // Host checks if all players locked in
-        if (isHostRef.current) {
-          const state = channel.presenceState();
-          const count = (Object.values(state).flat() as any[]).length;
-          if (submissionsRef.current.size >= count && count > 0) {
-            if (roundTimerRef.current) clearTimeout(roundTimerRef.current);
-            resolveRoundRef.current();
-          }
-        }
+        checkAllSubmitted(channel);
       });
 
       channel.on('broadcast', { event: 'PLAYER_READY_NEXT' }, ({ payload }) => {
@@ -280,28 +516,43 @@ export function useMultiplayer() {
       });
 
       channel.on('broadcast', { event: 'ROUND_RESULTS' }, ({ payload }) => {
+        if (autoAdvanceTimerRef.current) {
+          clearTimeout(autoAdvanceTimerRef.current);
+          autoAdvanceTimerRef.current = null;
+        }
         readyPlayerIdsRef.current.clear();
         setReadyPlayerIds([]);
         setRoundResults(payload.results);
         setPlayers(payload.players);
+        playersRef.current = payload.players;
         setGameState('result');
       });
 
       channel.on('broadcast', { event: 'MATCH_SUMMARY' }, ({ payload }) => {
+        if (autoAdvanceTimerRef.current) {
+          clearTimeout(autoAdvanceTimerRef.current);
+          autoAdvanceTimerRef.current = null;
+        }
         setPlayers(payload.players);
+        playersRef.current = payload.players;
         setGameState('summary');
       });
 
       // Subscribe and track presence
       channel.subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          await channel.track({
-            id: userIdRef.current,
-            name: pName,
-            isHost: asHost,
-            score: 0,
-            locked: false,
-          });
+          try {
+            await channel.track({
+              id: userIdRef.current,
+              name: pName,
+              isHost: asHost,
+              score: 0,
+              locked: false,
+              roomSettings: asHost ? (hostSettings || roomSettingsRef.current) : undefined,
+            });
+          } catch (err) {
+            console.warn('Failed to track presence in room:', err);
+          }
           setRoomCode(code);
           setIsHost(asHost);
           isHostRef.current = asHost;
@@ -311,18 +562,20 @@ export function useMultiplayer() {
         }
       });
     },
-    [checkAllReady]
+    [checkAllReady, checkAllSubmitted]
   );
 
-  // 1. Create Room (Generates 6-digit code)
+  // 1. Create Room (Generates 6-digit code with host settings)
   const createRoom = useCallback(
-    (name: string) => {
-      const pName = name.trim() || 'Golumolu';
+    (name: string, settings?: MultiplayerRoomSettings) => {
+      const pName = name.trim() || generateAutoPlayerName();
       playerNameRef.current = pName;
-
-      // 6-digit numeric room code: 100000 - 999999
+      if (settings) {
+        setRoomSettings(settings);
+        roomSettingsRef.current = settings;
+      }
       const code = Math.floor(100000 + Math.random() * 900000).toString();
-      setupChannel(code, true, pName);
+      setupChannel(code, true, pName, settings);
     },
     [setupChannel]
   );
@@ -331,7 +584,7 @@ export function useMultiplayer() {
   const joinRoom = useCallback(
     (code: string, name: string) => {
       const cleanCode = code.trim();
-      const pName = name.trim() || 'Golumolu';
+      const pName = name.trim() || generateAutoPlayerName();
       playerNameRef.current = pName;
 
       if (cleanCode.length !== 6) {
@@ -347,6 +600,18 @@ export function useMultiplayer() {
   // 3. Host starts match
   const startMatch = useCallback(() => {
     if (!isHostRef.current || !channelRef.current) return;
+    if (roundTimerRef.current) {
+      clearTimeout(roundTimerRef.current);
+      roundTimerRef.current = null;
+    }
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
     roundRef.current = 0;
     scoresRef.current.clear();
     submissionsRef.current.clear();
@@ -363,6 +628,16 @@ export function useMultiplayer() {
 
       submissionsRef.current.set(userIdRef.current, guess);
 
+      // Immediately mark locked for self in UI and ref
+      setPlayers((prev) =>
+        prev.map((p) => (p.id === userIdRef.current ? { ...p, locked: true } : p))
+      );
+      if (playersRef.current) {
+        playersRef.current = playersRef.current.map((p) =>
+          p.id === userIdRef.current ? { ...p, locked: true } : p
+        );
+      }
+
       // Broadcast guess to host and other players
       channel.send({
         type: 'broadcast',
@@ -371,16 +646,9 @@ export function useMultiplayer() {
       });
 
       // If host, check if all locked
-      if (isHostRef.current) {
-        const state = channel.presenceState();
-        const count = (Object.values(state).flat() as any[]).length;
-        if (submissionsRef.current.size >= count && count > 0) {
-          if (roundTimerRef.current) clearTimeout(roundTimerRef.current);
-          resolveRoundRef.current();
-        }
-      }
+      checkAllSubmitted(channel);
     },
-    []
+    [checkAllSubmitted]
   );
 
   // 5. Player Ready for Next Round
@@ -404,16 +672,26 @@ export function useMultiplayer() {
   // 6. Leave Room
   const leaveRoom = useCallback(() => {
     if (channelRef.current) {
-      channelRef.current.unsubscribe();
+      supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
     if (roundTimerRef.current) {
       clearTimeout(roundTimerRef.current);
+      roundTimerRef.current = null;
+    }
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
     }
     setRoomCode(null);
     setIsHost(false);
     isHostRef.current = false;
     setPlayers([]);
+    playersRef.current = [];
     setGameState('lobby');
     setRoundResults([]);
     submissionsRef.current.clear();
@@ -433,6 +711,7 @@ export function useMultiplayer() {
     roundResults,
     errorMessage,
     readyPlayerIds,
+    roomSettings,
     userId: userIdRef.current,
     createRoom,
     joinRoom,

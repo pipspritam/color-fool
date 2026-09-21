@@ -1,34 +1,51 @@
 {
-    "expo":  {
-                 "name":  "color-fool",
-                 "slug":  "color-fool",
-                 "version":  "1.0.0",
-                 "orientation":  "portrait",
-                 "icon":  "./assets/icon.png",
-                 "userInterfaceStyle":  "dark",
-                 "ios":  {
-                             "supportsTablet":  true
-                         },
-                 "android":  {
-                                 "package":  "com.pritampips.color_fool",
-                                 "versionCode":  1,
-                                 "permissions":  [
-                                                     "INTERNET",
-                                                     "VIBRATE"
-                                                 ],
-                                 "adaptiveIcon":  {
-                                                      "backgroundColor":  "#090D16",
-                                                      "foregroundImage":  "./assets/android-icon-foreground.png"
-                                                  },
-                                 "predictiveBackGestureEnabled":  false
-                             },
-                 "web":  {
-                             "favicon":  "./assets/favicon.png"
-                         },
-                 "extra":  {
-                               "eas":  {
-                                           "projectId":  "6efb6bd8-03c6-49e0-b9cd-16821a92bfda"
-                                       }
-                           }
-             }
+  "expo": {
+    "name": "color-fool",
+    "slug": "color-fool",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "colorfool",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.pritampips.color_fool",
+      "versionCode": 1,
+      "permissions": [
+        "INTERNET",
+        "VIBRATE"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#090D16",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6efb6bd8-03c6-49e0-b9cd-16821a92bfda"
+      }
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#090D16",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#090D16"
+          }
+        }
+      ]
+    ]
+  }
 }

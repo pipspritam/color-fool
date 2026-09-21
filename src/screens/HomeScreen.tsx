@@ -1,14 +1,20 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Difficulty } from '../hooks/useColorState';
+import { Difficulty, CustomGameConfig } from '../hooks/useColorState';
 import { triggerHaptic } from '../utils/haptics';
+import { SettingsModal } from '../components/SettingsModal';
+import { saveDifficulty, saveCustomConfig } from '../utils/storage';
 
 interface HomeScreenProps {
-  onStartSolo: (difficulty: Difficulty) => void;
-  onStartMultiplayer: () => void;
+  onStartSolo: (difficulty: Difficulty, customConfig?: CustomGameConfig) => void;
+  onStartMultiplayer: (difficulty: Difficulty, customConfig?: CustomGameConfig) => void;
   sliderPosition: 'left' | 'right';
   onUpdateSliderPosition: (pos: 'left' | 'right') => void;
+  initialCustomConfig?: CustomGameConfig;
+  initialDifficulty?: Difficulty;
+  onDifficultyChange?: (difficulty: Difficulty) => void;
+  onCustomConfigChange?: (config: CustomGameConfig) => void;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -16,10 +22,156 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onStartMultiplayer,
   sliderPosition,
   onUpdateSliderPosition,
+  initialCustomConfig,
+  initialDifficulty,
+  onDifficultyChange,
+  onCustomConfigChange,
 }) => {
   const insets = useSafeAreaInsets();
-  const [difficulty, setDifficulty] = useState<Difficulty>('medium');
+  const [difficulty, setDifficulty] = useState<Difficulty>(initialDifficulty ?? 'medium');
   const [showSettings, setShowSettings] = useState(false);
+
+  // Custom Mode Config (Timers: 0.5s to 99.0s, Rounds: 1 to 30)
+  const [previewSec, setPreviewSec] = useState(initialCustomConfig?.previewSeconds ?? 3.0);
+  const [guessSec, setGuessSec] = useState(initialCustomConfig?.guessSeconds ?? 15.0);
+  const [roundsCount, setRoundsCount] = useState(initialCustomConfig?.rounds ?? 5);
+
+  const [previewText, setPreviewText] = useState(previewSec.toFixed(1));
+  const [guessText, setGuessText] = useState(guessSec.toFixed(1));
+  const [roundsText, setRoundsText] = useState(String(roundsCount));
+
+  // Sync state when props change from storage loader
+  useEffect(() => {
+    if (initialDifficulty) {
+      setDifficulty(initialDifficulty);
+    }
+  }, [initialDifficulty]);
+
+  useEffect(() => {
+    if (initialCustomConfig) {
+      setPreviewSec(initialCustomConfig.previewSeconds);
+      setPreviewText(initialCustomConfig.previewSeconds.toFixed(1));
+      setGuessSec(initialCustomConfig.guessSeconds);
+      setGuessText(initialCustomConfig.guessSeconds.toFixed(1));
+      setRoundsCount(initialCustomConfig.rounds);
+      setRoundsText(String(initialCustomConfig.rounds));
+    }
+  }, [initialCustomConfig]);
+
+  const clampValue = (val: number) => {
+    const clamped = Math.min(99.0, Math.max(0.5, val));
+    return Math.round(clamped * 10) / 10;
+  };
+
+  const clampRounds = (val: number) => {
+    return Math.min(30, Math.max(1, Math.round(val)));
+  };
+
+  const syncCustomConfig = (p: number, g: number, r: number) => {
+    const cfg: CustomGameConfig = { previewSeconds: p, guessSeconds: g, rounds: r };
+    saveCustomConfig(cfg);
+    onCustomConfigChange?.(cfg);
+  };
+
+  const handleSelectDifficulty = (level: Difficulty) => {
+    triggerHaptic('selection');
+    setDifficulty(level);
+    saveDifficulty(level);
+    onDifficultyChange?.(level);
+  };
+
+  const adjustPreview = (delta: number) => {
+    triggerHaptic('light');
+    const next = clampValue(previewSec + delta);
+    setPreviewSec(next);
+    setPreviewText(next.toFixed(1));
+    syncCustomConfig(next, guessSec, roundsCount);
+  };
+
+  const adjustGuess = (delta: number) => {
+    triggerHaptic('light');
+    const next = clampValue(guessSec + delta);
+    setGuessSec(next);
+    setGuessText(next.toFixed(1));
+    syncCustomConfig(previewSec, next, roundsCount);
+  };
+
+  const adjustRounds = (delta: number) => {
+    triggerHaptic('light');
+    const next = clampRounds(roundsCount + delta);
+    setRoundsCount(next);
+    setRoundsText(String(next));
+    syncCustomConfig(previewSec, guessSec, next);
+  };
+
+  const handlePreviewTextChange = (text: string) => {
+    setPreviewText(text);
+    const parsed = parseFloat(text);
+    if (!isNaN(parsed)) {
+      setPreviewSec(clampValue(parsed));
+    }
+  };
+
+  const handleGuessTextChange = (text: string) => {
+    setGuessText(text);
+    const parsed = parseFloat(text);
+    if (!isNaN(parsed)) {
+      setGuessSec(clampValue(parsed));
+    }
+  };
+
+  const handleRoundsTextChange = (text: string) => {
+    setRoundsText(text);
+    const parsed = parseInt(text, 10);
+    if (!isNaN(parsed)) {
+      setRoundsCount(clampRounds(parsed));
+    }
+  };
+
+  const handleBlurPreview = () => {
+    const valid = clampValue(previewSec);
+    setPreviewSec(valid);
+    setPreviewText(valid.toFixed(1));
+    syncCustomConfig(valid, guessSec, roundsCount);
+  };
+
+  const handleBlurGuess = () => {
+    const valid = clampValue(guessSec);
+    setGuessSec(valid);
+    setGuessText(valid.toFixed(1));
+    syncCustomConfig(previewSec, valid, roundsCount);
+  };
+
+  const handleBlurRounds = () => {
+    const valid = clampRounds(roundsCount);
+    setRoundsCount(valid);
+    setRoundsText(String(valid));
+    syncCustomConfig(previewSec, guessSec, valid);
+  };
+
+  const handleStartGame = () => {
+    if (difficulty === 'custom') {
+      onStartSolo('custom', {
+        previewSeconds: previewSec,
+        guessSeconds: guessSec,
+        rounds: roundsCount,
+      });
+    } else {
+      onStartSolo(difficulty);
+    }
+  };
+
+  const handleStartMultiplayer = () => {
+    if (difficulty === 'custom') {
+      onStartMultiplayer('custom', {
+        previewSeconds: previewSec,
+        guessSeconds: guessSec,
+        rounds: roundsCount,
+      });
+    } else {
+      onStartMultiplayer(difficulty);
+    }
+  };
 
   return (
     <View
@@ -45,6 +197,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         }}
         activeOpacity={0.7}
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        accessible={true}
+        accessibilityRole="button"
+        accessibilityLabel="Game settings"
       >
         <Text style={styles.settingsIcon}>⚙</Text>
       </TouchableOpacity>
@@ -64,13 +219,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         <View style={styles.card}>
           <Text style={styles.cardHeader}>SELECT DIFFICULTY</Text>
           <View style={styles.diffRow}>
-            {(['easy', 'medium', 'hard'] as Difficulty[]).map((level) => {
+            {(['easy', 'medium', 'hard', 'custom'] as Difficulty[]).map((level) => {
               const isSelected = difficulty === level;
               return (
                 <TouchableOpacity
                   key={level}
                   style={[styles.diffBtn, isSelected && styles.diffBtnActive]}
-                  onPress={() => setDifficulty(level)}
+                  onPress={() => handleSelectDifficulty(level)}
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.diffText, isSelected && styles.diffTextActive]}>
@@ -100,6 +255,144 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <Text style={styles.descSub}>Muted, pastels, and dark earth tones (5% - 100%)</Text>
               </>
             )}
+            {difficulty === 'custom' && (
+              <View style={styles.customBox}>
+                {/* 1. Preview Time Selector */}
+                <View style={styles.timerControlRow}>
+                  <View style={styles.timerLabelCol}>
+                    <Text style={styles.timerTitle}>PREVIEW TIME</Text>
+                    <Text style={styles.timerSub}>Time to memorize (0.5 - 99s)</Text>
+                  </View>
+
+                  <View style={styles.stepperContainer}>
+                    <TouchableOpacity
+                      style={styles.stepBtn}
+                      onPress={() => adjustPreview(-0.5)}
+                      activeOpacity={0.7}
+                      accessible={true}
+                      accessibilityRole="button"
+                      accessibilityLabel="Decrease preview time"
+                    >
+                      <Text style={styles.stepBtnText}>-</Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.inputWrap}>
+                      <TextInput
+                        style={styles.timerInput}
+                        value={previewText}
+                        onChangeText={handlePreviewTextChange}
+                        onBlur={handleBlurPreview}
+                        keyboardType="numeric"
+                        maxLength={4}
+                        selectTextOnFocus
+                      />
+                      <Text style={styles.secSuffix}>s</Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.stepBtn}
+                      onPress={() => adjustPreview(0.5)}
+                      activeOpacity={0.7}
+                      accessible={true}
+                      accessibilityRole="button"
+                      accessibilityLabel="Increase preview time"
+                    >
+                      <Text style={styles.stepBtnText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* 2. Guessing Time Limit Selector */}
+                <View style={styles.timerControlRow}>
+                  <View style={styles.timerLabelCol}>
+                    <Text style={styles.timerTitle}>GUESS TIME LIMIT</Text>
+                    <Text style={styles.timerSub}>Auto-locks in (0.5 - 99s)</Text>
+                  </View>
+
+                  <View style={styles.stepperContainer}>
+                    <TouchableOpacity
+                      style={styles.stepBtn}
+                      onPress={() => adjustGuess(-1.0)}
+                      activeOpacity={0.7}
+                      accessible={true}
+                      accessibilityRole="button"
+                      accessibilityLabel="Decrease guess time limit"
+                    >
+                      <Text style={styles.stepBtnText}>-</Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.inputWrap}>
+                      <TextInput
+                        style={styles.timerInput}
+                        value={guessText}
+                        onChangeText={handleGuessTextChange}
+                        onBlur={handleBlurGuess}
+                        keyboardType="numeric"
+                        maxLength={4}
+                        selectTextOnFocus
+                      />
+                      <Text style={styles.secSuffix}>s</Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.stepBtn}
+                      onPress={() => adjustGuess(1.0)}
+                      activeOpacity={0.7}
+                      accessible={true}
+                      accessibilityRole="button"
+                      accessibilityLabel="Increase guess time limit"
+                    >
+                      <Text style={styles.stepBtnText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* 3. Number of Rounds Selector */}
+                <View style={styles.timerControlRow}>
+                  <View style={styles.timerLabelCol}>
+                    <Text style={styles.timerTitle}>NUMBER OF ROUNDS</Text>
+                    <Text style={styles.timerSub}>Match length (1 - 30 rounds)</Text>
+                  </View>
+
+                  <View style={styles.stepperContainer}>
+                    <TouchableOpacity
+                      style={styles.stepBtn}
+                      onPress={() => adjustRounds(-1)}
+                      activeOpacity={0.7}
+                      accessible={true}
+                      accessibilityRole="button"
+                      accessibilityLabel="Decrease number of rounds"
+                    >
+                      <Text style={styles.stepBtnText}>-</Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.inputWrap}>
+                      <TextInput
+                        style={styles.timerInput}
+                        value={roundsText}
+                        onChangeText={handleRoundsTextChange}
+                        onBlur={handleBlurRounds}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                        selectTextOnFocus
+                      />
+                      <Text style={styles.secSuffix}>r</Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.stepBtn}
+                      onPress={() => adjustRounds(1)}
+                      activeOpacity={0.7}
+                      accessible={true}
+                      accessibilityRole="button"
+                      accessibilityLabel="Increase number of rounds"
+                    >
+                      <Text style={styles.stepBtnText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            )}
           </View>
         </View>
 
@@ -117,15 +410,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         <View style={styles.actions}>
           <TouchableOpacity
             style={styles.primaryBtn}
-            onPress={() => onStartSolo(difficulty)}
+            onPress={handleStartGame}
             activeOpacity={0.85}
           >
-            <Text style={styles.primaryBtnText}>SOLO MATCH (5 ROUNDS)</Text>
+            <Text style={styles.primaryBtnText}>
+              {difficulty === 'custom'
+                ? `START CUSTOM MATCH (${roundsCount} ROUND${roundsCount > 1 ? 'S' : ''})`
+                : 'SOLO MATCH (5 ROUNDS)'}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.secondaryBtn}
-            onPress={onStartMultiplayer}
+            onPress={handleStartMultiplayer}
             activeOpacity={0.85}
           >
             <Text style={styles.secondaryBtnText}>MULTIPLAYER ROOM (UP TO 10)</Text>
@@ -134,115 +431,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       </View>
 
       {/* Settings Modal */}
-      <Modal
+      <SettingsModal
         visible={showSettings}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowSettings(false)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setShowSettings(false)}
-        >
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>SETTINGS</Text>
-            <Text style={styles.modalSubtitle}>COLOR BARS POSITION (H S L)</Text>
-
-            <View style={styles.optionsList}>
-              {/* Option 1: Left */}
-              <TouchableOpacity
-                style={[
-                  styles.optionCard,
-                  sliderPosition === 'left' && styles.optionCardActive,
-                ]}
-                onPress={() => {
-                  triggerHaptic('selection');
-                  onUpdateSliderPosition('left');
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={styles.optionLeft}>
-                  <View
-                    style={[
-                      styles.radioCircle,
-                      sliderPosition === 'left' && styles.radioCircleActive,
-                    ]}
-                  >
-                    {sliderPosition === 'left' && <View style={styles.radioInner} />}
-                  </View>
-                  <View>
-                    <Text
-                      style={[
-                        styles.optionLabel,
-                        sliderPosition === 'left' && styles.optionLabelActive,
-                      ]}
-                    >
-                      Left (H S L)
-                    </Text>
-                    <Text style={styles.optionSub}>
-                      Slider bars docked on the left rail
-                    </Text>
-                  </View>
-                </View>
-                {sliderPosition === 'left' && (
-                  <Text style={styles.checkIcon}>✓</Text>
-                )}
-              </TouchableOpacity>
-
-              {/* Option 2: Right */}
-              <TouchableOpacity
-                style={[
-                  styles.optionCard,
-                  sliderPosition === 'right' && styles.optionCardActive,
-                ]}
-                onPress={() => {
-                  triggerHaptic('selection');
-                  onUpdateSliderPosition('right');
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={styles.optionLeft}>
-                  <View
-                    style={[
-                      styles.radioCircle,
-                      sliderPosition === 'right' && styles.radioCircleActive,
-                    ]}
-                  >
-                    {sliderPosition === 'right' && <View style={styles.radioInner} />}
-                  </View>
-                  <View>
-                    <Text
-                      style={[
-                        styles.optionLabel,
-                        sliderPosition === 'right' && styles.optionLabelActive,
-                      ]}
-                    >
-                      Right (H S L)
-                    </Text>
-                    <Text style={styles.optionSub}>
-                      Slider bars docked on the right rail
-                    </Text>
-                  </View>
-                </View>
-                {sliderPosition === 'right' && (
-                  <Text style={styles.checkIcon}>✓</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.modalDoneBtn}
-              onPress={() => {
-                triggerHaptic('light');
-                setShowSettings(false);
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.modalDoneText}>DONE</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        onClose={() => setShowSettings(false)}
+        sliderPosition={sliderPosition}
+        onUpdateSliderPosition={onUpdateSliderPosition}
+      />
     </View>
   );
 };
@@ -360,6 +554,82 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 3,
   },
+  customBox: {
+    width: '100%',
+    marginTop: 4,
+    gap: 10,
+  },
+  timerControlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  timerLabelCol: {
+    flex: 1,
+    marginRight: 6,
+  },
+  timerTitle: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  timerSub: {
+    color: '#94A3B8',
+    fontSize: 10,
+    marginTop: 2,
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  stepBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepBtnText: {
+    color: '#38BDF8',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 20,
+  },
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    height: 32,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    minWidth: 54,
+    justifyContent: 'center',
+  },
+  timerInput: {
+    color: '#38BDF8',
+    fontSize: 13,
+    fontWeight: '900',
+    textAlign: 'center',
+    padding: 0,
+    minWidth: 32,
+  },
+  secSuffix: {
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 2,
+  },
   infoCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
     borderRadius: 16,
@@ -412,110 +682,6 @@ const styles = StyleSheet.create({
     color: '#38BDF8',
     fontSize: 14,
     fontWeight: '800',
-    letterSpacing: 1,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(9, 13, 22, 0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  modalCard: {
-    backgroundColor: '#131D31',
-    width: '100%',
-    maxWidth: 360,
-    borderRadius: 24,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  modalTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-    textAlign: 'center',
-  },
-  modalSubtitle: {
-    color: '#64748B',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-    marginTop: 4,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  optionsList: {
-    gap: 12,
-    marginBottom: 24,
-  },
-  optionCard: {
-    backgroundColor: '#1E293B',
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  optionCardActive: {
-    borderColor: '#38BDF8',
-    backgroundColor: 'rgba(56, 189, 248, 0.1)',
-  },
-  optionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  radioCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#64748B',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radioCircleActive: {
-    borderColor: '#38BDF8',
-  },
-  radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#38BDF8',
-  },
-  optionLabel: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  optionLabelActive: {
-    color: '#38BDF8',
-  },
-  optionSub: {
-    color: '#94A3B8',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  checkIcon: {
-    color: '#38BDF8',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  modalDoneBtn: {
-    backgroundColor: '#38BDF8',
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  modalDoneText: {
-    color: '#090D16',
-    fontWeight: '900',
-    fontSize: 14,
     letterSpacing: 1,
   },
 });
