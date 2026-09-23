@@ -77,7 +77,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   }, [onExit]);
 
   // Initialize round
-  const startRound = useCallback((roundNum: number) => {
+  const startRound = useCallback(() => {
     const newTarget = generateRandomTarget(difficulty);
     setTarget(newTarget);
     resetGuess();
@@ -89,7 +89,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       isMountedRef.current = true;
       return;
     }
-    startRound(round);
+    startRound();
   }, [round, startRound]);
 
   const handlePreviewDone = () => {
@@ -316,9 +316,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 const styles = StyleSheet.create({
   canvas: {
     ...StyleSheet.absoluteFill,
-  },
-  safeArea: {
-    flex: 1,
   },
   topHud: {
     flexDirection: 'row',

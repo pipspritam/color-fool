@@ -8,45 +8,80 @@ node_modules/
 dist/
 web-build/
 expo-env.d.ts
+.eas/
 
-# Native
+# Native & Generated
 .kotlin/
+.gradle/
+build/
+/ios
+/android
 *.orig.*
+*.apk
+*.aab
+*.ipa
+
+# Certificates & Keystores
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
+*.pem
+*.cer
+*.der
+*.pfx
+*.crl
 *.mobileprovision
+
+# Testing & Coverage
+coverage/
+.nyc_output/
 
 # Metro
 .metro-health-check*
 
-# debug
+# Package Manager & Logs
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+pnpm-debug.log*
+bun.log
+*.log
 
-# macOS
-.DS_Store
-*.pem
+# Environment & Secrets
+.env*
+!.env.example
 
-# local env files
-.env*.local
-
-# typescript
+# TypeScript
 *.tsbuildinfo
 
-# generated native folders
-/ios
-/android
+# Operating System files
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Editors & IDEs
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
 
 # backend server
 /server/
-.env
 
 # AI agents & assistants
 .gemini/
 .gemni/
 .agents/
 .agent/
-.idea/

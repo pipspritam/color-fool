@@ -60,7 +60,7 @@ export const VerticalSlider: React.FC<VerticalSliderProps> = React.memo(({
       onMoveShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderGrant: (evt) => {
-        containerRef.current?.measure((x, y, w, h, pageX, pageY) => {
+        containerRef.current?.measure((_x, _y, _w, _h, _pageX, pageY) => {
           trackPageYRef.current = pageY;
           updateFromPageY(evt.nativeEvent.pageY);
         });

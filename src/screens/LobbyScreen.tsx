@@ -5,7 +5,6 @@ import {
   TextInput,
   StyleSheet,
   TouchableOpacity,
-  FlatList,
   Share,
   Platform,
   ScrollView,
@@ -932,9 +931,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 const styles = StyleSheet.create({
   canvas: {
     ...StyleSheet.absoluteFill,
-  },
-  safeArea: {
-    flex: 1,
   },
   lobbyContainer: {
     flex: 1,

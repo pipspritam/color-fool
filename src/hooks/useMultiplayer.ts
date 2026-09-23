@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { supabase, isSupabaseConfigured } from '../utils/supabase';
+import { supabase } from '../utils/supabase';
 import { HSLColor, calculateDeltaE, scoreFromDeltaE } from '../utils/colorScorer';
 import { PlayerScore } from '../components/Leaderboard';
 import { Difficulty, generateRandomTarget } from './useColorState';
