@@ -12,40 +12,70 @@ export interface PlayerScore {
 
 interface LeaderboardProps {
   players: PlayerScore[];
+  isResultPhase?: boolean;
+  currentUserId?: string;
 }
 
-export const Leaderboard: React.FC<LeaderboardProps> = ({ players }) => {
+export const Leaderboard: React.FC<LeaderboardProps> = ({
+  players,
+  isResultPhase = false,
+  currentUserId,
+}) => {
   const sorted = [...players].sort((a, b) => b.score - a.score);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>LIVE LEADERBOARD</Text>
-      {sorted.map((player, idx) => (
-        <View key={player.id} style={styles.row}>
-          <Text style={styles.rank}>#{idx + 1}</Text>
-          <Text style={styles.name} numberOfLines={1}>
-            {player.name}
-          </Text>
-          <View style={styles.statusCol}>
-            {player.locked ? (
-              <Text style={styles.lockedText}>✓ LOCKED</Text>
-            ) : (
-              <Text style={styles.pendingText}>PICKING...</Text>
-            )}
-            <Text style={styles.score}>{player.score} pts</Text>
+      <Text style={styles.title}>
+        {isResultPhase ? 'ROUND STANDINGS' : 'LIVE LEADERBOARD'}
+      </Text>
+      {sorted.map((player, idx) => {
+        const isSelf = player.id === currentUserId;
+        return (
+          <View key={player.id} style={styles.row}>
+            <Text style={styles.rank}>#{idx + 1}</Text>
+            <Text
+              style={[styles.name, isSelf && styles.selfName]}
+              numberOfLines={1}
+            >
+              {player.name}
+            </Text>
+            <View style={styles.statusCol}>
+              {isResultPhase ? (
+                player.lastRoundScore !== undefined ? (
+                  <>
+                    <Text style={styles.roundPointsBadge}>+{player.lastRoundScore.toFixed(2)} pts</Text>
+                    <Text style={styles.roundMetaText}>
+                      {player.deltaE !== undefined ? `ΔE ${player.deltaE.toFixed(2)} • ` : ''}
+                      {player.score.toFixed(2)} tot
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={styles.score}>{player.score.toFixed(2)} pts</Text>
+                )
+              ) : (
+                <>
+                  {player.locked ? (
+                    <Text style={styles.lockedText}>✓ LOCKED</Text>
+                  ) : (
+                    <Text style={styles.pendingText}>PICKING...</Text>
+                  )}
+                  <Text style={styles.score}>{player.score.toFixed(2)} pts</Text>
+                </>
+              )}
+            </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
     borderRadius: 16,
-    padding: 12,
-    minWidth: 190,
+    padding: 10,
+    minWidth: 180,
     maxWidth: 240,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
@@ -56,32 +86,36 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   title: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: 'rgba(255, 255, 255, 0.65)',
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 1.5,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 5,
+    paddingVertical: 4,
     borderBottomWidth: 0.5,
     borderBottomColor: 'rgba(255, 255, 255, 0.08)',
   },
   rank: {
     color: '#FBBF24',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
-    width: 24,
+    width: 22,
   },
   name: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     flex: 1,
-    marginRight: 8,
+    marginRight: 6,
+  },
+  selfName: {
+    color: '#38BDF8',
+    fontWeight: '800',
   },
   statusCol: {
     alignItems: 'flex-end',
@@ -98,7 +132,17 @@ const styles = StyleSheet.create({
   },
   score: {
     color: '#38BDF8',
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
+  },
+  roundPointsBadge: {
+    color: '#4ADE80',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  roundMetaText: {
+    color: 'rgba(255, 255, 255, 0.55)',
+    fontSize: 8.5,
+    fontWeight: '600',
   },
 });

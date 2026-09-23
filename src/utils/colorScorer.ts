@@ -100,35 +100,48 @@ export function calculateDeltaE(colorA: HSLColor, colorB: HSLColor): number {
   const db = labA.b - labB.b;
 
   const deltaE = Math.sqrt(dL * dL + da * da + db * db);
-  return Math.round(deltaE * 10) / 10;
+  return Math.round(deltaE * 100) / 100;
 }
 
 /**
- * Maps Delta E to 0-10 Match Score according to specification:
- * Delta E <= 2.5  -> 10 pts (imperceptible match)
- * Delta E <= 5.0  -> 9 pts
- * Delta E <= 10.0 -> 8 pts
- * Delta E <= 18.0 -> 6 pts
- * Delta E <= 28.0 -> 4 pts
- * Delta E <= 40.0 -> 2 pts
- * Delta E > 40.0  -> max(0, floor(10 - Delta E / 5)) pts
+ * Maps Delta E to a continuous 0.00 to 10.00 score with 2 decimal places precision.
+ * Anchored to standard perceptual color distance thresholds:
+ * Delta E = 0.0  -> 10.00 pts (perfect match)
+ * Delta E = 5.0  -> 9.00 pts
+ * Delta E = 10.0 -> 8.00 pts
+ * Delta E = 18.0 -> 6.00 pts
+ * Delta E = 28.0 -> 4.00 pts
+ * Delta E = 40.0 -> 2.00 pts
+ * Delta E >= 50.0 -> 0.00 pts
  */
 export function scoreFromDeltaE(deltaE: number): number {
-  if (deltaE <= 2.5) return 10;
-  if (deltaE <= 5.0) return 9;
-  if (deltaE <= 10.0) return 8;
-  if (deltaE <= 18.0) return 6;
-  if (deltaE <= 28.0) return 4;
-  if (deltaE <= 40.0) return 2;
-  return Math.max(0, Math.floor(10 - deltaE / 5));
+  if (deltaE <= 0) return 10.0;
+  let rawScore: number;
+
+  if (deltaE <= 10.0) {
+    rawScore = 10.0 - 0.2 * deltaE;
+  } else if (deltaE <= 18.0) {
+    rawScore = 8.0 - ((deltaE - 10.0) / 8.0) * 2.0;
+  } else if (deltaE <= 28.0) {
+    rawScore = 6.0 - ((deltaE - 18.0) / 10.0) * 2.0;
+  } else if (deltaE <= 40.0) {
+    rawScore = 4.0 - ((deltaE - 28.0) / 12.0) * 2.0;
+  } else if (deltaE <= 50.0) {
+    rawScore = 2.0 - ((deltaE - 40.0) / 10.0) * 2.0;
+  } else {
+    rawScore = 0.0;
+  }
+
+  const clamped = Math.max(0.0, Math.min(10.0, rawScore));
+  return Math.round(clamped * 100) / 100;
 }
 
 export function getScoreRating(score: number): string {
-  if (score === 10) return 'Perfection! (Imperceptible)';
-  if (score >= 8) return 'Superb Eye!';
-  if (score >= 6) return 'Close Match';
-  if (score >= 4) return 'Noticeable Difference';
-  if (score >= 2) return 'Distinct Difference';
+  if (score >= 9.5) return 'Perfection! (Imperceptible)';
+  if (score >= 8.0) return 'Superb Eye!';
+  if (score >= 6.0) return 'Close Match';
+  if (score >= 4.0) return 'Noticeable Difference';
+  if (score >= 2.0) return 'Distinct Difference';
   return 'Way Off';
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   ScrollView,
   BackHandler,
   Alert,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMultiplayer } from '../hooks/useMultiplayer';
@@ -107,16 +109,27 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     createRoom,
     joinRoom,
     startMatch,
+    updateCurrentGuess,
     submitGuess,
     readyNextRound,
+    returnToLobby,
     leaveRoom,
   } = useMultiplayer();
 
   const { guess, setHue, setSaturation, setLightness, resetGuess } = useColorState();
 
+  const guessRef = useRef(guess);
+  guessRef.current = guess;
+
   // Intercept Android hardware back button
   useEffect(() => {
     const onBackPress = () => {
+      if (gameState === 'summary') {
+        // Return to room lobby, do not navigate back to HomeScreen
+        triggerHaptic('light');
+        returnToLobby();
+        return true;
+      }
       if (roomCode) {
         Alert.alert(
           'Leave Room?',
@@ -134,21 +147,38 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [roomCode, leaveRoom, onBack]);
+  }, [gameState, roomCode, returnToLobby, leaveRoom, onBack]);
 
-  // Reset guess and lock-in state when guessing starts
+  // Reset guess and lock-in state when guessing starts, and register initial guess
   useEffect(() => {
     if (gameState === 'guessing') {
       resetGuess();
       setLockedIn(false);
+      updateCurrentGuess({ h: 180, s: 50, l: 50 });
+    } else if (gameState === 'preview') {
+      setLockedIn(false);
     }
-  }, [gameState, resetGuess]);
+  }, [gameState, resetGuess, updateCurrentGuess]);
 
-  const handleLockIn = () => {
+  // Live sync current slider values to room / host while adjusting
+  useEffect(() => {
+    if (gameState === 'guessing' && !lockedIn) {
+      updateCurrentGuess(guess);
+    }
+  }, [guess, gameState, lockedIn, updateCurrentGuess]);
+
+  const handleLockIn = useCallback(() => {
     triggerHaptic('success');
     setLockedIn(true);
-    submitGuess(guess);
-  };
+    submitGuess(guessRef.current);
+  }, [submitGuess]);
+
+  // If round resolves before player manually clicked lock, ensure local locked status is marked true
+  useEffect(() => {
+    if (gameState === 'result' && !lockedIn) {
+      setLockedIn(true);
+    }
+  }, [gameState, lockedIn]);
 
   const handleShareCode = async () => {
     triggerHaptic('light');
@@ -197,7 +227,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     const isResult = gameState === 'result';
     const isSummary = gameState === 'summary';
 
-    const myResult = roundResults.find((r) => r.name === playerName) || roundResults[0];
+    const myResult =
+      roundResults.find((r) => r.id === userId || r.name === playerName) || roundResults[0];
 
     const backgroundColor = isPreview
       ? hslToString(currentTarget)
@@ -244,13 +275,21 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             </Text>
           </View>
 
-          <Leaderboard players={players} />
+          <Leaderboard
+            players={players}
+            isResultPhase={isResult}
+            currentUserId={userId}
+          />
         </View>
 
         {/* Preview Phase */}
         {isPreview && (
           <View style={styles.previewCenter}>
-            <CountdownRing durationSeconds={previewDuration} label="MEMORIZE COLOR" />
+            <CountdownRing
+              key={`preview-${round}`}
+              durationSeconds={previewDuration}
+              label="MEMORIZE COLOR"
+            />
           </View>
         )}
 
@@ -261,6 +300,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             {roomSettings.guessSeconds > 0 ? (
               <View style={styles.guessTimerWrap} pointerEvents="none">
                 <CountdownRing
+                  key={`guess-${round}`}
                   durationSeconds={roomSettings.guessSeconds}
                   label="TIME REMAINING"
                   size="compact"
@@ -378,18 +418,29 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 {players
                   .slice()
                   .sort((a, b) => b.score - a.score)
-                  .map((p, idx) => (
-                    <View key={p.id} style={styles.podiumRow}>
-                      <Text style={styles.podiumRank}>
-                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
-                      </Text>
-                      <Text style={styles.podiumName}>{p.name}</Text>
-                      <Text style={styles.podiumScore}>{p.score} pts</Text>
-                    </View>
-                  ))}
+                  .map((p, idx) => {
+                    const isSelf = p.id === userId;
+                    return (
+                      <View
+                        key={p.id}
+                        style={[styles.podiumRow, isSelf && styles.podiumRowSelf]}
+                      >
+                        <Text style={styles.podiumRank}>
+                          {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                        </Text>
+                        <Text
+                          style={[styles.podiumName, isSelf && styles.podiumNameSelf]}
+                          numberOfLines={1}
+                        >
+                          {p.name} {isSelf ? '★' : ''}
+                        </Text>
+                        <Text style={styles.podiumScore}>{p.score.toFixed(2)} pts</Text>
+                      </View>
+                    );
+                  })}
               </View>
 
-              <TouchableOpacity style={styles.returnLobbyBtn} onPress={leaveRoom}>
+              <TouchableOpacity style={styles.returnLobbyBtn} onPress={returnToLobby}>
                 <Text style={styles.returnLobbyText}>RETURN TO LOBBY</Text>
               </TouchableOpacity>
             </View>
@@ -408,25 +459,39 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
   // 2. LOBBY SETUP SCREEN
   return (
-    <View
-      style={[
-        styles.lobbyContainer,
-        {
-          paddingTop: Math.max(insets.top, 24) + 8,
-          paddingBottom: Math.max(insets.bottom, 20) + 8,
-        },
-      ]}
-    >
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View
+        style={[
+          styles.lobbyContainer,
+          {
+            paddingTop: Math.max(insets.top, 24) + 8,
+            paddingBottom: Math.max(insets.bottom, 20) + 8,
+          },
+        ]}
+      >
       <View style={styles.lobbyHeader}>
         <TouchableOpacity
-          onPress={onBack}
+          onPress={() => {
+            if (roomCode) {
+              Alert.alert(
+                'Leave Room?',
+                'You will be disconnected from the multiplayer room.',
+                [
+                  { text: 'Stay', style: 'cancel' },
+                  { text: 'Leave', style: 'destructive', onPress: leaveRoom },
+                ]
+              );
+            } else {
+              onBack();
+            }
+          }}
           style={styles.backBtn}
           activeOpacity={0.7}
           accessible={true}
           accessibilityRole="button"
-          accessibilityLabel="Back to home screen"
+          accessibilityLabel={roomCode ? 'Leave room' : 'Back to home screen'}
         >
-          <Text style={styles.backText}>← BACK</Text>
+          <Text style={styles.backText}>{roomCode ? '← LEAVE ROOM' : '← BACK'}</Text>
         </TouchableOpacity>
         <View style={styles.headerRightRow}>
           <View style={styles.statusIndicator}>
@@ -500,7 +565,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               <View style={styles.selectedPillDivider} />
               <View style={styles.selectedPill}>
                 <Text style={styles.selectedPillVal}>
-                  {homeConfigSettings.previewSeconds.toFixed(1)}s
+                  {homeConfigSettings.previewSeconds.toFixed(2)}s
                 </Text>
                 <Text style={styles.selectedPillLbl}>PREVIEW</Text>
               </View>
@@ -513,7 +578,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   ]}
                 >
                   {homeConfigSettings.guessSeconds > 0
-                    ? `${homeConfigSettings.guessSeconds.toFixed(1)}s`
+                    ? `${homeConfigSettings.guessSeconds.toFixed(2)}s`
                     : 'UNLIMITED'}
                 </Text>
                 <Text style={styles.selectedPillLbl}>GUESS TIME</Text>
@@ -636,7 +701,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               <View style={styles.specBox}>
                 <Text style={styles.specIcon}>👁</Text>
                 <Text style={styles.specValue}>
-                  {homeConfigSettings.previewSeconds.toFixed(1)}s
+                  {homeConfigSettings.previewSeconds.toFixed(2)}s
                 </Text>
                 <Text style={styles.specLabel}>Preview Time</Text>
                 <Text style={styles.specSub}>Memorize target color</Text>
@@ -651,7 +716,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   ]}
                 >
                   {homeConfigSettings.guessSeconds > 0
-                    ? `${homeConfigSettings.guessSeconds.toFixed(1)}s`
+                    ? `${homeConfigSettings.guessSeconds.toFixed(2)}s`
                     : 'UNLIMITED'}
                 </Text>
                 <Text style={styles.specLabel}>Guess Limit</Text>
@@ -689,7 +754,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 <View style={styles.ruleCol}>
                   <Text style={styles.ruleHeading}>Identical Target Colors</Text>
                   <Text style={styles.ruleDetail}>
-                    Each round starts with a {homeConfigSettings.previewSeconds.toFixed(1)}s preview of the same secret color shown to all players simultaneously.
+                    Each round starts with a {homeConfigSettings.previewSeconds.toFixed(2)}s preview of the same secret color shown to all players simultaneously.
                   </Text>
                 </View>
               </View>
@@ -700,7 +765,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   <Text style={styles.ruleHeading}>Reconstruct & Lock In</Text>
                   <Text style={styles.ruleDetail}>
                     {homeConfigSettings.guessSeconds > 0
-                      ? `Adjust sliders (${sliderPosition.toUpperCase()} dock). Lock in early or let the ${homeConfigSettings.guessSeconds.toFixed(1)}s timer auto lock your guess.`
+                      ? `Adjust sliders (${sliderPosition.toUpperCase()} dock). Lock in early or let the ${homeConfigSettings.guessSeconds.toFixed(2)}s timer auto lock your guess.`
                       : `Adjust sliders (${sliderPosition.toUpperCase()} dock) with unlimited time. Once every player locks in their guess, the round resolves immediately.`}
                   </Text>
                 </View>
@@ -770,7 +835,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               <View style={styles.roomSpecDivider} />
               <View style={styles.roomSpecBadge}>
                 <Text style={styles.roomSpecBadgeVal}>
-                  {roomSettings.previewSeconds.toFixed(1)}s
+                  {roomSettings.previewSeconds.toFixed(2)}s
                 </Text>
                 <Text style={styles.roomSpecBadgeLbl}>PREVIEW</Text>
               </View>
@@ -783,7 +848,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   ]}
                 >
                   {roomSettings.guessSeconds > 0
-                    ? `${roomSettings.guessSeconds.toFixed(1)}s`
+                    ? `${roomSettings.guessSeconds.toFixed(2)}s`
                     : 'UNLIMITED'}
                 </Text>
                 <Text style={styles.roomSpecBadgeLbl}>GUESS TIME</Text>
@@ -800,7 +865,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               <Text style={styles.activeModeDetailsTitle}>MATCH CONFIGURATION & RULES</Text>
               <Text style={styles.activeModeDetailsSub}>
                 • Mode: {roomSettings.difficulty.toUpperCase()} ({roomSettings.totalRounds} Synchronized Rounds){'\n'}
-                • Preview: {roomSettings.previewSeconds.toFixed(1)}s • Guess Limit: {roomSettings.guessSeconds > 0 ? `${roomSettings.guessSeconds.toFixed(1)}s (auto lock-in)` : 'Unlimited (locks when all submit)'}{'\n'}
+                • Preview: {roomSettings.previewSeconds.toFixed(2)}s • Guess Limit: {roomSettings.guessSeconds > 0 ? `${roomSettings.guessSeconds.toFixed(2)}s (auto lock-in)` : 'Unlimited (locks when all submit)'}{'\n'}
                 • Sliders Rail: Docked on {sliderPosition.toUpperCase()} side{'\n'}
                 • Scoring: Perceptual CIE ΔE distance (0 to 10 points per round)
               </Text>
@@ -828,6 +893,26 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 <Text style={styles.waitingText}>Waiting for host to start the match...</Text>
               </View>
             )}
+
+            <TouchableOpacity
+              style={styles.cancelRoomBtn}
+              onPress={() => {
+                Alert.alert(
+                  'Leave Room?',
+                  'You will disconnect and return to the multiplayer menu.',
+                  [
+                    { text: 'Stay', style: 'cancel' },
+                    { text: 'Leave Room', style: 'destructive', onPress: leaveRoom },
+                  ]
+                );
+              }}
+              activeOpacity={0.7}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Leave room"
+            >
+              <Text style={styles.cancelRoomText}>✕ LEAVE ROOM</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       )}
@@ -839,7 +924,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         sliderPosition={sliderPosition}
         onUpdateSliderPosition={onUpdateSliderPosition}
       />
-    </View>
+      </View>
+    </TouchableWithoutFeedback>
   );
 };
 
@@ -1474,6 +1560,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontStyle: 'italic',
   },
+  cancelRoomBtn: {
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    width: '100%',
+    alignItems: 'center',
+  },
+  cancelRoomText: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
   gameTopHud: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1644,6 +1747,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.05)',
   },
+  podiumRowSelf: {
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+  },
   podiumRank: {
     width: 36,
     fontSize: 16,
@@ -1655,6 +1763,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     flex: 1,
+  },
+  podiumNameSelf: {
+    color: '#38BDF8',
+    fontWeight: '800',
   },
   podiumScore: {
     color: '#38BDF8',

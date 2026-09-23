@@ -1,10 +1,21 @@
 import { Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
+let lastLightHapticTime = 0;
+
 export const triggerHaptic = (
   style: 'light' | 'medium' | 'heavy' | 'success' | 'warning' | 'selection' = 'light'
 ) => {
   if (Platform.OS === 'web') return;
+
+  const now = Date.now();
+  // Throttle light haptics during rapid slider scrubbing to protect native vibration service
+  if (style === 'light') {
+    if (now - lastLightHapticTime < 45) {
+      return;
+    }
+    lastLightHapticTime = now;
+  }
 
   const noop = () => {};
   try {
@@ -25,3 +36,4 @@ export const triggerHaptic = (
     // Fail silently in simulator or unsupported devices
   }
 };
+

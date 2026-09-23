@@ -8,6 +8,7 @@ import {
   Share,
   Platform,
   Alert,
+  BackHandler,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RoundRecord } from './GameScreen';
@@ -21,9 +22,19 @@ interface SummaryScreenProps {
 
 export const SummaryScreen: React.FC<SummaryScreenProps> = ({ records, onRestart }) => {
   const insets = useSafeAreaInsets();
-  const totalScore = records.reduce((sum, r) => sum + r.score, 0);
+  const totalScore = Math.round(records.reduce((sum, r) => sum + r.score, 0) * 100) / 100;
   const totalRounds = records.length || 5;
   const maxScore = totalRounds * 10;
+
+  // Intercept Android hardware back button to cleanly restart/return home
+  React.useEffect(() => {
+    const onBackPress = () => {
+      onRestart();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [onRestart]);
 
   const getRank = (score: number) => {
     const pct = maxScore > 0 ? (score / maxScore) * 100 : 0;
@@ -38,7 +49,7 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({ records, onRestart
 
   const handleShare = async () => {
     triggerHaptic('light');
-    const message = `I scored ${totalScore}/${maxScore} in color-fool (${totalRounds} rounds)! Can you beat my perceptual score?`;
+    const message = `I scored ${totalScore.toFixed(2)}/${maxScore} in color-fool (${totalRounds} rounds)! Can you beat my perceptual score?`;
     if (Platform.OS === 'web') {
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
         try {
@@ -75,7 +86,7 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({ records, onRestart
         {/* Total Score Badge Card */}
         <View style={styles.totalCard}>
           <Text style={styles.rankEmoji}>{rank.emoji}</Text>
-          <Text style={styles.totalScore}>{totalScore}</Text>
+          <Text style={styles.totalScore}>{totalScore.toFixed(2)}</Text>
           <Text style={styles.totalMax}>/ {maxScore} TOTAL POINTS</Text>
           <Text style={[styles.rankTitle, { color: rank.color }]}>{rank.title}</Text>
         </View>
@@ -104,8 +115,8 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({ records, onRestart
             </View>
 
             <View style={styles.recordStats}>
-              <Text style={styles.deltaText}>ΔE: {r.deltaE.toFixed(1)}</Text>
-              <Text style={styles.roundScore}>+{r.score} pts</Text>
+              <Text style={styles.deltaText}>ΔE: {r.deltaE.toFixed(2)}</Text>
+              <Text style={styles.roundScore}>+{r.score.toFixed(2)} pts</Text>
             </View>
           </View>
         ))}

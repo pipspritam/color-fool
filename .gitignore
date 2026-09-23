@@ -43,3 +43,10 @@ yarn-error.*
 # backend server
 /server/
 .env
+
+# AI agents & assistants
+.gemini/
+.gemni/
+.agents/
+.agent/
+.idea/

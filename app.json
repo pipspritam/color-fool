@@ -8,7 +8,8 @@
     "scheme": "colorfool",
     "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pritampips.colorfool"
     },
     "android": {
       "package": "com.pritampips.color_fool",

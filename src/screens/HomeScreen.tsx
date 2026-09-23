@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  TouchableWithoutFeedback,
+  Keyboard,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Difficulty, CustomGameConfig } from '../hooks/useColorState';
 import { triggerHaptic } from '../utils/haptics';
@@ -36,8 +44,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [guessSec, setGuessSec] = useState(initialCustomConfig?.guessSeconds ?? 15.0);
   const [roundsCount, setRoundsCount] = useState(initialCustomConfig?.rounds ?? 5);
 
-  const [previewText, setPreviewText] = useState(previewSec.toFixed(1));
-  const [guessText, setGuessText] = useState(guessSec.toFixed(1));
+  const [previewText, setPreviewText] = useState(previewSec.toFixed(2));
+  const [guessText, setGuessText] = useState(guessSec.toFixed(2));
   const [roundsText, setRoundsText] = useState(String(roundsCount));
 
   // Sync state when props change from storage loader
@@ -50,9 +58,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   useEffect(() => {
     if (initialCustomConfig) {
       setPreviewSec(initialCustomConfig.previewSeconds);
-      setPreviewText(initialCustomConfig.previewSeconds.toFixed(1));
+      setPreviewText(initialCustomConfig.previewSeconds.toFixed(2));
       setGuessSec(initialCustomConfig.guessSeconds);
-      setGuessText(initialCustomConfig.guessSeconds.toFixed(1));
+      setGuessText(initialCustomConfig.guessSeconds.toFixed(2));
       setRoundsCount(initialCustomConfig.rounds);
       setRoundsText(String(initialCustomConfig.rounds));
     }
@@ -60,7 +68,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const clampValue = (val: number) => {
     const clamped = Math.min(99.0, Math.max(0.5, val));
-    return Math.round(clamped * 10) / 10;
+    return Math.round(clamped * 100) / 100;
   };
 
   const clampRounds = (val: number) => {
@@ -84,7 +92,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     triggerHaptic('light');
     const next = clampValue(previewSec + delta);
     setPreviewSec(next);
-    setPreviewText(next.toFixed(1));
+    setPreviewText(next.toFixed(2));
     syncCustomConfig(next, guessSec, roundsCount);
   };
 
@@ -92,7 +100,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     triggerHaptic('light');
     const next = clampValue(guessSec + delta);
     setGuessSec(next);
-    setGuessText(next.toFixed(1));
+    setGuessText(next.toFixed(2));
     syncCustomConfig(previewSec, next, roundsCount);
   };
 
@@ -131,14 +139,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const handleBlurPreview = () => {
     const valid = clampValue(previewSec);
     setPreviewSec(valid);
-    setPreviewText(valid.toFixed(1));
+    setPreviewText(valid.toFixed(2));
     syncCustomConfig(valid, guessSec, roundsCount);
   };
 
   const handleBlurGuess = () => {
     const valid = clampValue(guessSec);
     setGuessSec(valid);
-    setGuessText(valid.toFixed(1));
+    setGuessText(valid.toFixed(2));
     syncCustomConfig(previewSec, valid, roundsCount);
   };
 
@@ -174,15 +182,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   };
 
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          paddingTop: Math.max(insets.top, 24) + 8,
-          paddingBottom: Math.max(insets.bottom, 20) + 8,
-        },
-      ]}
-    >
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View
+        style={[
+          styles.container,
+          {
+            paddingTop: Math.max(insets.top, 24) + 8,
+            paddingBottom: Math.max(insets.bottom, 20) + 8,
+          },
+        ]}
+      >
       {/* Settings Gear Button */}
       <TouchableOpacity
         style={[
@@ -437,7 +446,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         sliderPosition={sliderPosition}
         onUpdateSliderPosition={onUpdateSliderPosition}
       />
-    </View>
+      </View>
+    </TouchableWithoutFeedback>
   );
 };
 

@@ -93,14 +93,14 @@ export const ResultSplit: React.FC<ResultSplitProps> = ({
       <View style={styles.card}>
         <Text style={styles.roundHeader}>ROUND {roundNumber} RESULTS</Text>
         <View style={styles.scoreRow}>
-          <Text style={styles.scoreNumber}>+{score}</Text>
-          <Text style={styles.scoreMax}> / 10 pts</Text>
+          <Text style={styles.scoreNumber}>+{score.toFixed(2)}</Text>
+          <Text style={styles.scoreMax}> / 10.00 pts</Text>
         </View>
         <Text style={styles.ratingText}>{getScoreRating(score)}</Text>
 
         <View style={styles.metricBadge}>
           <Text style={styles.metricText}>
-            Perceptual Distance (ΔE): <Text style={styles.bold}>{deltaE.toFixed(1)}</Text>
+            Perceptual Distance (ΔE): <Text style={styles.bold}>{deltaE.toFixed(2)}</Text>
           </Text>
         </View>
 

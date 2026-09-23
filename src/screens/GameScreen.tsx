@@ -49,7 +49,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const { guess, setHue, setSaturation, setLightness, resetGuess } = useColorState();
 
-  const totalScore = records.reduce((sum, r) => sum + r.score, 0);
+  const totalScore = Math.round(records.reduce((sum, r) => sum + r.score, 0) * 100) / 100;
 
   const totalRounds = difficulty === 'custom' && customConfig ? customConfig.rounds : 5;
 
@@ -182,7 +182,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
           <View style={styles.hudScoreBox}>
             <Text style={styles.hudScoreLabel}>SCORE</Text>
-            <Text style={styles.hudScoreVal}>{totalScore}</Text>
+            <Text style={styles.hudScoreVal}>{totalScore.toFixed(2)}</Text>
           </View>
         </View>
       </View>
@@ -191,6 +191,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       {phase === 'preview' && (
         <View style={styles.previewContainer}>
           <CountdownRing
+            key={`preview-${round}`}
             durationSeconds={previewDuration}
             label="MEMORIZE COLOR"
             onFinish={handlePreviewDone}
@@ -205,6 +206,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           {difficulty === 'custom' && !!customConfig && (
             <View style={styles.guessTimerWrap} pointerEvents="none">
               <CountdownRing
+                key={`guess-${round}`}
                 durationSeconds={customConfig.guessSeconds}
                 label="TIME REMAINING"
                 size="compact"

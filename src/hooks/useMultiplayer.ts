@@ -31,6 +31,16 @@ export function useMultiplayer() {
   const [gameState, setGameState] = useState<
     'lobby' | 'preview' | 'guessing' | 'result' | 'summary'
   >('lobby');
+  const gameStateRef = useRef<'lobby' | 'preview' | 'guessing' | 'result' | 'summary'>('lobby');
+
+  const updateGameState = useCallback(
+    (newState: 'lobby' | 'preview' | 'guessing' | 'result' | 'summary') => {
+      gameStateRef.current = newState;
+      setGameState(newState);
+    },
+    []
+  );
+
   const [currentTarget, setCurrentTarget] = useState<HSLColor>({ h: 0, s: 0, l: 50 });
   const [round, setRound] = useState(1);
   const [previewDuration, setPreviewDuration] = useState(3.0);
@@ -51,6 +61,7 @@ export function useMultiplayer() {
   const roundTimerRef = useRef<any>(null);
   const autoAdvanceTimerRef = useRef<any>(null);
   const previewTimerRef = useRef<any>(null);
+  const updateGuessDebounceTimerRef = useRef<any>(null);
   const currentTargetRef = useRef<HSLColor>({ h: 0, s: 0, l: 50 });
   const roundRef = useRef(1);
   const roomSettingsRef = useRef<MultiplayerRoomSettings>({
@@ -59,7 +70,8 @@ export function useMultiplayer() {
     guessSeconds: 0,
     totalRounds: 5,
   });
-  const submissionsRef = useRef<Map<string, HSLColor>>(new Map());
+  const lockedSubmissionsRef = useRef<Map<string, HSLColor>>(new Map());
+  const liveGuessesRef = useRef<Map<string, HSLColor>>(new Map());
   const scoresRef = useRef<Map<string, number>>(new Map());
   const readyPlayerIdsRef = useRef<Set<string>>(new Set());
   const playersRef = useRef<PlayerScore[]>([]);
@@ -91,12 +103,16 @@ export function useMultiplayer() {
         clearTimeout(autoAdvanceTimerRef.current);
         autoAdvanceTimerRef.current = null;
       }
+      if (updateGuessDebounceTimerRef.current) {
+        clearTimeout(updateGuessDebounceTimerRef.current);
+        updateGuessDebounceTimerRef.current = null;
+      }
     };
   }, []);
 
   // Host: resolve round
   const resolveRound = useCallback(() => {
-    if (!channelRef.current || !isHostRef.current) return;
+    if (!channelRef.current || !isHostRef.current || gameStateRef.current !== 'guessing') return;
 
     if (roundTimerRef.current) {
       clearTimeout(roundTimerRef.current);
@@ -138,11 +154,14 @@ export function useMultiplayer() {
     const updatedPlayers: PlayerScore[] = [];
 
     for (const p of playerMap.values()) {
-      const pGuess = submissionsRef.current.get(p.id) || { h: 180, s: 50, l: 50 };
+      const pGuess =
+        lockedSubmissionsRef.current.get(p.id) ||
+        liveGuessesRef.current.get(p.id) ||
+        { h: 180, s: 50, l: 50 };
       const deltaE = calculateDeltaE(target, pGuess);
       const points = scoreFromDeltaE(deltaE);
       const prevScore = scoresRef.current.get(p.id) || 0;
-      const newScore = prevScore + points;
+      const newScore = Math.round((prevScore + points) * 100) / 100;
       scoresRef.current.set(p.id, newScore);
 
       results.push({
@@ -170,7 +189,7 @@ export function useMultiplayer() {
     setRoundResults(results);
     setPlayers(updatedPlayers);
     playersRef.current = updatedPlayers;
-    setGameState('result');
+    updateGameState('result');
 
     // Broadcast results to all players
     channel.send({
@@ -214,15 +233,32 @@ export function useMultiplayer() {
     const maxRounds = roomSettingsRef.current.totalRounds || 5;
 
     if (nextRound > maxRounds) {
-      setGameState('summary');
+      updateGameState('summary');
       const state = channel.presenceState();
       const currentPresences = Object.values(state).flat() as any[];
-      const finalPlayers = currentPresences.map((p) => ({
-        id: p.id,
-        name: p.name,
-        score: scoresRef.current.get(p.id) || 0,
-        locked: false,
-      }));
+
+      const playerMap = new Map<string, { id: string; name: string }>();
+      for (const p of currentPresences) {
+        if (p && p.id) playerMap.set(p.id, { id: p.id, name: p.name || 'Player' });
+      }
+      for (const p of playersRef.current) {
+        if (p && p.id && !playerMap.has(p.id)) playerMap.set(p.id, { id: p.id, name: p.name || 'Player' });
+      }
+      if (!playerMap.has(userIdRef.current)) {
+        playerMap.set(userIdRef.current, { id: userIdRef.current, name: playerNameRef.current });
+      }
+
+      const finalPlayers = Array.from(playerMap.values())
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          score: scoresRef.current.get(p.id) || 0,
+          locked: false,
+        }))
+        .sort((a, b) => b.score - a.score);
+
+      setPlayers(finalPlayers);
+      playersRef.current = finalPlayers;
 
       channel.send({
         type: 'broadcast',
@@ -233,19 +269,36 @@ export function useMultiplayer() {
     }
 
     // Reset submissions and locked status
-    submissionsRef.current.clear();
-    setPlayers((prev) => prev.map((p) => ({ ...p, locked: false })));
+    lockedSubmissionsRef.current.clear();
+    liveGuessesRef.current.clear();
+    setPlayers((prev) =>
+      prev.map((p) => ({
+        ...p,
+        locked: false,
+        score: nextRound === 1 ? 0 : (scoresRef.current.get(p.id) ?? p.score),
+        lastRoundScore: undefined,
+        deltaE: undefined,
+      }))
+    );
     if (playersRef.current) {
-      playersRef.current = playersRef.current.map((p) => ({ ...p, locked: false }));
+      playersRef.current = playersRef.current.map((p) => ({
+        ...p,
+        locked: false,
+        score: nextRound === 1 ? 0 : (scoresRef.current.get(p.id) ?? p.score),
+        lastRoundScore: undefined,
+        deltaE: undefined,
+      }));
     }
 
     // Generate random target with selected room difficulty
     const newTarget = generateRandomTarget(roomSettingsRef.current.difficulty);
     currentTargetRef.current = newTarget;
     setCurrentTarget(newTarget);
-    setGameState('preview');
+    updateGameState('preview');
 
-    const previewMs = Math.round((roomSettingsRef.current.previewSeconds || 3.0) * 1000);
+    const previewSec = roomSettingsRef.current.previewSeconds || 3.0;
+    const previewMs = Math.round(previewSec * 1000);
+    setPreviewDuration(previewSec);
     const isUnlimitedGuess =
       !roomSettingsRef.current.guessSeconds || roomSettingsRef.current.guessSeconds <= 0;
     const guessMs = isUnlimitedGuess ? 0 : Math.round(roomSettingsRef.current.guessSeconds * 1000);
@@ -267,31 +320,37 @@ export function useMultiplayer() {
     // After preview, broadcast guess start
     previewTimerRef.current = setTimeout(() => {
       previewTimerRef.current = null;
-      setGameState('guessing');
+      updateGameState('guessing');
       channel.send({
         type: 'broadcast',
         event: 'START_GUESSING',
         payload: { timeout: guessMs },
       });
 
-      // guess timer only when not unlimited
+      // guess timer
       if (roundTimerRef.current) {
         clearTimeout(roundTimerRef.current);
         roundTimerRef.current = null;
       }
       if (guessMs > 0) {
+        // Add 800ms network buffer so all client auto-locks have time to arrive
         roundTimerRef.current = setTimeout(() => {
           resolveRoundRef.current();
-        }, guessMs);
+        }, guessMs + 800);
+      } else {
+        // Safety timeout for unlimited mode (120s) so match never hangs if a player device sleeps
+        roundTimerRef.current = setTimeout(() => {
+          resolveRoundRef.current();
+        }, 120000);
       }
     }, previewMs);
-  }, []);
+  }, [updateGameState]);
 
   resolveRoundRef.current = resolveRound;
   advanceRoundRef.current = advanceRound;
 
   const checkAllSubmitted = useCallback((channel: RealtimeChannel) => {
-    if (!isHostRef.current) return;
+    if (!isHostRef.current || gameStateRef.current !== 'guessing') return;
     const state = channel.presenceState();
     const presences = Object.values(state).flat() as any[];
     const activeIds = new Set<string>();
@@ -305,7 +364,7 @@ export function useMultiplayer() {
 
     if (activeIds.size === 0) return;
 
-    const allSubmitted = Array.from(activeIds).every((id) => submissionsRef.current.has(id));
+    const allSubmitted = Array.from(activeIds).every((id) => lockedSubmissionsRef.current.has(id));
 
     if (allSubmitted) {
       if (roundTimerRef.current) {
@@ -317,7 +376,7 @@ export function useMultiplayer() {
   }, []);
 
   const checkAllReady = useCallback((channel: RealtimeChannel) => {
-    if (!isHostRef.current) return;
+    if (!isHostRef.current || gameStateRef.current !== 'result') return;
     const state = channel.presenceState();
     const presences = Object.values(state).flat() as any[];
     const activeIds = new Set<string>();
@@ -349,6 +408,7 @@ export function useMultiplayer() {
       if (hostSettings) {
         setRoomSettings(hostSettings);
         roomSettingsRef.current = hostSettings;
+        setPreviewDuration(hostSettings.previewSeconds || 3.0);
       }
 
       const channelName = `room-${code}`;
@@ -412,12 +472,31 @@ export function useMultiplayer() {
           }
         }
 
-        const roster: PlayerScore[] = presences.map((p) => ({
-          id: p.id,
-          name: p.name,
-          score: scoresRef.current.get(p.id) || p.score || 0,
-          locked: submissionsRef.current.has(p.id),
-        }));
+        const roster: PlayerScore[] = presences.map((p) => {
+          const existing = playersRef.current.find((pl) => pl.id === p.id);
+          const score = scoresRef.current.get(p.id) ?? existing?.score ?? p.score ?? 0;
+          return {
+            id: p.id,
+            name: p.name,
+            score,
+            locked: lockedSubmissionsRef.current.has(p.id) || (existing?.locked ?? false),
+            deltaE: existing?.deltaE,
+            lastRoundScore: existing?.lastRoundScore,
+          };
+        });
+
+        // Ensure self is in roster if presence hasn't reflected local user yet
+        if (!roster.some((p) => p.id === userIdRef.current)) {
+          const existing = playersRef.current.find((pl) => pl.id === userIdRef.current);
+          roster.push({
+            id: userIdRef.current,
+            name: playerNameRef.current,
+            score: scoresRef.current.get(userIdRef.current) ?? existing?.score ?? 0,
+            locked: lockedSubmissionsRef.current.has(userIdRef.current) || (existing?.locked ?? false),
+            deltaE: existing?.deltaE,
+            lastRoundScore: existing?.lastRoundScore,
+          });
+        }
 
         setPlayers(roster);
         playersRef.current = roster;
@@ -433,6 +512,7 @@ export function useMultiplayer() {
         if (hostPresence && hostPresence.roomSettings) {
           setRoomSettings(hostPresence.roomSettings);
           roomSettingsRef.current = hostPresence.roomSettings;
+          setPreviewDuration(hostPresence.roomSettings.previewSeconds || 3.0);
         }
 
         // If host and players disconnected during guessing or results, check if remaining are done
@@ -464,10 +544,32 @@ export function useMultiplayer() {
         }
         readyPlayerIdsRef.current.clear();
         setReadyPlayerIds([]);
-        submissionsRef.current.clear();
-        setPlayers((prev) => prev.map((p) => ({ ...p, locked: false })));
+        lockedSubmissionsRef.current.clear();
+        liveGuessesRef.current.clear();
+
+        // If starting a fresh match (round 1), reset score map and previous round results
+        if (payload.round === 1) {
+          scoresRef.current.clear();
+          setRoundResults([]);
+        }
+
+        setPlayers((prev) =>
+          prev.map((p) => ({
+            ...p,
+            locked: false,
+            score: payload.round === 1 ? 0 : (scoresRef.current.get(p.id) ?? p.score),
+            lastRoundScore: undefined,
+            deltaE: undefined,
+          }))
+        );
         if (playersRef.current) {
-          playersRef.current = playersRef.current.map((p) => ({ ...p, locked: false }));
+          playersRef.current = playersRef.current.map((p) => ({
+            ...p,
+            locked: false,
+            score: payload.round === 1 ? 0 : (scoresRef.current.get(p.id) ?? p.score),
+            lastRoundScore: undefined,
+            deltaE: undefined,
+          }));
         }
         setCurrentTarget(payload.target);
         currentTargetRef.current = payload.target;
@@ -485,15 +587,38 @@ export function useMultiplayer() {
           setRoomSettings(syncedSettings);
           roomSettingsRef.current = syncedSettings;
         }
-        setGameState('preview');
+        updateGameState('preview');
+
+        // On guest, set a safety fallback timer: if START_GUESSING is delayed/dropped, auto-advance to guessing
+        if (!isHostRef.current) {
+          if (previewTimerRef.current) {
+            clearTimeout(previewTimerRef.current);
+            previewTimerRef.current = null;
+          }
+          previewTimerRef.current = setTimeout(() => {
+            previewTimerRef.current = null;
+            if (gameStateRef.current === 'preview') {
+              updateGameState('guessing');
+            }
+          }, payload.duration + 1500);
+        }
       });
 
       channel.on('broadcast', { event: 'START_GUESSING' }, () => {
-        setGameState('guessing');
+        if (previewTimerRef.current) {
+          clearTimeout(previewTimerRef.current);
+          previewTimerRef.current = null;
+        }
+        updateGameState('guessing');
+      });
+
+      channel.on('broadcast', { event: 'PLAYER_GUESS_UPDATE' }, ({ payload }) => {
+        liveGuessesRef.current.set(payload.userId, payload.guess);
       });
 
       channel.on('broadcast', { event: 'SUBMIT_GUESS' }, ({ payload }) => {
-        submissionsRef.current.set(payload.userId, payload.guess);
+        lockedSubmissionsRef.current.set(payload.userId, payload.guess);
+        liveGuessesRef.current.set(payload.userId, payload.guess);
 
         // Update locked status in UI and ref
         setPlayers((prev) =>
@@ -523,9 +648,12 @@ export function useMultiplayer() {
         readyPlayerIdsRef.current.clear();
         setReadyPlayerIds([]);
         setRoundResults(payload.results);
+        for (const p of payload.players) {
+          scoresRef.current.set(p.id, p.score);
+        }
         setPlayers(payload.players);
         playersRef.current = payload.players;
-        setGameState('result');
+        updateGameState('result');
       });
 
       channel.on('broadcast', { event: 'MATCH_SUMMARY' }, ({ payload }) => {
@@ -533,9 +661,54 @@ export function useMultiplayer() {
           clearTimeout(autoAdvanceTimerRef.current);
           autoAdvanceTimerRef.current = null;
         }
+        for (const p of payload.players) {
+          scoresRef.current.set(p.id, p.score);
+        }
         setPlayers(payload.players);
         playersRef.current = payload.players;
-        setGameState('summary');
+        updateGameState('summary');
+      });
+
+      channel.on('broadcast', { event: 'RETURN_TO_LOBBY' }, () => {
+        if (roundTimerRef.current) {
+          clearTimeout(roundTimerRef.current);
+          roundTimerRef.current = null;
+        }
+        if (previewTimerRef.current) {
+          clearTimeout(previewTimerRef.current);
+          previewTimerRef.current = null;
+        }
+        if (autoAdvanceTimerRef.current) {
+          clearTimeout(autoAdvanceTimerRef.current);
+          autoAdvanceTimerRef.current = null;
+        }
+        roundRef.current = 0;
+        setRound(1);
+        scoresRef.current.clear();
+        lockedSubmissionsRef.current.clear();
+        liveGuessesRef.current.clear();
+        readyPlayerIdsRef.current.clear();
+        setReadyPlayerIds([]);
+        setRoundResults([]);
+        setPlayers((prev) =>
+          prev.map((p) => ({
+            ...p,
+            score: 0,
+            locked: false,
+            lastRoundScore: undefined,
+            deltaE: undefined,
+          }))
+        );
+        if (playersRef.current) {
+          playersRef.current = playersRef.current.map((p) => ({
+            ...p,
+            score: 0,
+            locked: false,
+            lastRoundScore: undefined,
+            deltaE: undefined,
+          }));
+        }
+        updateGameState('lobby');
       });
 
       // Subscribe and track presence
@@ -573,6 +746,7 @@ export function useMultiplayer() {
       if (settings) {
         setRoomSettings(settings);
         roomSettingsRef.current = settings;
+        setPreviewDuration(settings.previewSeconds || 3.0);
       }
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       setupChannel(code, true, pName, settings);
@@ -614,19 +788,60 @@ export function useMultiplayer() {
     }
     roundRef.current = 0;
     scoresRef.current.clear();
-    submissionsRef.current.clear();
+    lockedSubmissionsRef.current.clear();
+    liveGuessesRef.current.clear();
     readyPlayerIdsRef.current.clear();
     setReadyPlayerIds([]);
+    setRoundResults([]);
+    setPlayers((prev) =>
+      prev.map((p) => ({
+        ...p,
+        score: 0,
+        locked: false,
+        lastRoundScore: undefined,
+        deltaE: undefined,
+      }))
+    );
+    if (playersRef.current) {
+      playersRef.current = playersRef.current.map((p) => ({
+        ...p,
+        score: 0,
+        locked: false,
+        lastRoundScore: undefined,
+        deltaE: undefined,
+      }));
+    }
     advanceRoundRef.current();
   }, []);
 
-  // 4. Submit Guess
+  // 4. Update Current Guess (Live sync while moving sliders)
+  const updateCurrentGuess = useCallback((guess: HSLColor) => {
+    // Save in local live guesses immediately
+    liveGuessesRef.current.set(userIdRef.current, guess);
+
+    // Debounced broadcast to peers (100ms)
+    if (updateGuessDebounceTimerRef.current) {
+      clearTimeout(updateGuessDebounceTimerRef.current);
+    }
+    updateGuessDebounceTimerRef.current = setTimeout(() => {
+      if (channelRef.current) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'PLAYER_GUESS_UPDATE',
+          payload: { userId: userIdRef.current, guess },
+        });
+      }
+    }, 100);
+  }, []);
+
+  // 5. Submit Guess
   const submitGuess = useCallback(
     (guess: HSLColor) => {
       if (!channelRef.current) return;
       const channel = channelRef.current;
 
-      submissionsRef.current.set(userIdRef.current, guess);
+      lockedSubmissionsRef.current.set(userIdRef.current, guess);
+      liveGuessesRef.current.set(userIdRef.current, guess);
 
       // Immediately mark locked for self in UI and ref
       setPlayers((prev) =>
@@ -651,7 +866,7 @@ export function useMultiplayer() {
     [checkAllSubmitted]
   );
 
-  // 5. Player Ready for Next Round
+  // 6. Player Ready for Next Round
   const readyNextRound = useCallback(() => {
     if (!channelRef.current) return;
     const channel = channelRef.current;
@@ -669,7 +884,58 @@ export function useMultiplayer() {
     checkAllReady(channel);
   }, [checkAllReady]);
 
-  // 6. Leave Room
+  // 7. Return to Room Lobby (Resets round & score state without disconnecting)
+  const returnToLobby = useCallback(() => {
+    if (roundTimerRef.current) {
+      clearTimeout(roundTimerRef.current);
+      roundTimerRef.current = null;
+    }
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+    roundRef.current = 0;
+    setRound(1);
+    scoresRef.current.clear();
+    lockedSubmissionsRef.current.clear();
+    liveGuessesRef.current.clear();
+    readyPlayerIdsRef.current.clear();
+    setReadyPlayerIds([]);
+    setRoundResults([]);
+    setPlayers((prev) =>
+      prev.map((p) => ({
+        ...p,
+        score: 0,
+        locked: false,
+        lastRoundScore: undefined,
+        deltaE: undefined,
+      }))
+    );
+    if (playersRef.current) {
+      playersRef.current = playersRef.current.map((p) => ({
+        ...p,
+        score: 0,
+        locked: false,
+        lastRoundScore: undefined,
+        deltaE: undefined,
+      }));
+    }
+    updateGameState('lobby');
+
+    if (channelRef.current && isHostRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'RETURN_TO_LOBBY',
+        payload: {},
+      });
+    }
+  }, [updateGameState]);
+
+  // 8. Leave Room
   const leaveRoom = useCallback(() => {
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
@@ -687,17 +953,22 @@ export function useMultiplayer() {
       clearTimeout(autoAdvanceTimerRef.current);
       autoAdvanceTimerRef.current = null;
     }
+    if (updateGuessDebounceTimerRef.current) {
+      clearTimeout(updateGuessDebounceTimerRef.current);
+      updateGuessDebounceTimerRef.current = null;
+    }
     setRoomCode(null);
     setIsHost(false);
     isHostRef.current = false;
     setPlayers([]);
     playersRef.current = [];
-    setGameState('lobby');
+    updateGameState('lobby');
     setRoundResults([]);
-    submissionsRef.current.clear();
+    lockedSubmissionsRef.current.clear();
+    liveGuessesRef.current.clear();
     readyPlayerIdsRef.current.clear();
     setReadyPlayerIds([]);
-  }, []);
+  }, [updateGameState]);
 
   return {
     connected,
@@ -716,8 +987,10 @@ export function useMultiplayer() {
     createRoom,
     joinRoom,
     startMatch,
+    updateCurrentGuess,
     submitGuess,
     readyNextRound,
+    returnToLobby,
     leaveRoom,
   };
 }

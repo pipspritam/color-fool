@@ -29,12 +29,12 @@ export const CountdownRing: React.FC<CountdownRingProps> = ({
       const remaining = Math.max(0, (totalMs - elapsed) / 1000);
       setTimeLeft(remaining);
 
-      if (remaining <= 0.05 && !finished) {
+      if (remaining <= 0.02 && !finished) {
         finished = true;
         clearInterval(interval);
         onFinishRef.current?.();
       }
-    }, 100);
+    }, 50);
 
     return () => clearInterval(interval);
   }, [durationSeconds]);
@@ -44,7 +44,7 @@ export const CountdownRing: React.FC<CountdownRingProps> = ({
   return (
     <View style={[styles.badge, isCompact && styles.badgeCompact]}>
       <Text style={[styles.timerText, isCompact && styles.timerTextCompact]}>
-        {timeLeft.toFixed(1)}s
+        {timeLeft.toFixed(2)}s
       </Text>
       <Text style={[styles.subText, isCompact && styles.subTextCompact]}>{label}</Text>
     </View>
