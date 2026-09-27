@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.pritampips.color_fool",
-      "versionCode": 8,
+      "versionCode": 9,
       "permissions": [
         "INTERNET",
         "VIBRATE"
