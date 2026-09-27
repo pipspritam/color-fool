@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { theme } from '../theme';
 
 interface CountdownRingProps {
   durationSeconds: number;
@@ -53,27 +54,22 @@ export const CountdownRing: React.FC<CountdownRingProps> = ({
 
 const styles = StyleSheet.create({
   badge: {
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    backgroundColor: theme.colors.hudControl,
     paddingHorizontal: 26,
     paddingVertical: 14,
     borderRadius: 36,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 8,
+    borderColor: theme.colors.hudBorder,
   },
   timerText: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 32,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
   },
   subText: {
-    color: 'rgba(255, 255, 255, 0.85)',
+    color: theme.colors.textSecondary,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 2,

@@ -12,6 +12,7 @@ import {
   saveDifficulty,
   saveCustomConfig,
 } from './src/utils/storage';
+import { theme } from './src/theme';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<'home' | 'game' | 'lobby' | 'summary'>(
@@ -24,6 +25,7 @@ export default function App() {
     previewSeconds: 3.0,
     guessSeconds: 15.0,
     rounds: 5,
+    palette: 'all',
   });
 
   // Load cached settings on app launch
@@ -81,7 +83,7 @@ export default function App() {
   };
 
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <StatusBar style="light" />
       {currentScreen === 'home' && (
         <HomeScreen

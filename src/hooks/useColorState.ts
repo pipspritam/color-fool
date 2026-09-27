@@ -2,11 +2,13 @@ import { useState, useCallback } from 'react';
 import { HSLColor } from '../utils/colorScorer';
 
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'custom';
+export type PaletteType = 'all' | 'easy' | 'medium' | 'hard';
 
 export interface CustomGameConfig {
   previewSeconds: number; // 0.5 to 99.0
   guessSeconds: number;   // 0.5 to 99.0
   rounds: number;         // 1 to 30
+  palette: PaletteType;   // 'all' | 'easy' | 'medium' | 'hard'
 }
 
 export interface DifficultyConfig {
@@ -41,8 +43,30 @@ export const DIFFICULTY_CONFIG: Record<Exclude<Difficulty, 'custom'>, Difficulty
   },
 };
 
-export function generateRandomTarget(difficulty: Difficulty): HSLColor {
-  const cfg = difficulty === 'custom' ? DIFFICULTY_CONFIG.medium : DIFFICULTY_CONFIG[difficulty];
+export function resolvePaletteForRound(
+  difficulty: Difficulty,
+  customConfig?: CustomGameConfig,
+  round: number = 1
+): 'easy' | 'medium' | 'hard' {
+  if (difficulty !== 'custom') {
+    return difficulty;
+  }
+  const palette = customConfig?.palette ?? 'all';
+  if (palette === 'all') {
+    const sequence: ('easy' | 'medium' | 'hard')[] = ['easy', 'medium', 'hard'];
+    const idx = (Math.max(1, round) - 1) % sequence.length;
+    return sequence[idx];
+  }
+  return palette;
+}
+
+export function generateRandomTarget(
+  difficulty: Difficulty,
+  customConfig?: CustomGameConfig,
+  round: number = 1
+): HSLColor {
+  const effectivePalette = resolvePaletteForRound(difficulty, customConfig, round);
+  const cfg = DIFFICULTY_CONFIG[effectivePalette];
   const h = Math.floor(Math.random() * 360);
   const s = Math.floor(cfg.sMin + Math.random() * (cfg.sMax - cfg.sMin + 1));
   const l = Math.floor(cfg.lMin + Math.random() * (cfg.lMax - cfg.lMin + 1));

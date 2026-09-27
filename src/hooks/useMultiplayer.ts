@@ -3,7 +3,12 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../utils/supabase';
 import { HSLColor, calculateDeltaE, scoreFromDeltaE } from '../utils/colorScorer';
 import { PlayerScore } from '../components/Leaderboard';
-import { Difficulty, generateRandomTarget } from './useColorState';
+import {
+  Difficulty,
+  generateRandomTarget,
+  PaletteType,
+  resolvePaletteForRound,
+} from './useColorState';
 import { generateAutoPlayerName } from '../utils/storage';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -21,6 +26,7 @@ export interface MultiplayerRoomSettings {
   previewSeconds: number;
   guessSeconds: number;
   totalRounds: number;
+  palette?: PaletteType;
 }
 
 export function useMultiplayer() {
@@ -47,6 +53,7 @@ export function useMultiplayer() {
   const [roundResults, setRoundResults] = useState<RoundResultData[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [readyPlayerIds, setReadyPlayerIds] = useState<string[]>([]);
+  const [currentPalette, setCurrentPalette] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [roomSettings, setRoomSettings] = useState<MultiplayerRoomSettings>({
     difficulty: 'medium',
     previewSeconds: 3.0,
@@ -183,8 +190,18 @@ export function useMultiplayer() {
       });
     }
 
-    results.sort((a, b) => b.points - a.points);
-    updatedPlayers.sort((a, b) => b.score - a.score);
+    results.sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      if (a.deltaE !== b.deltaE) return a.deltaE - b.deltaE;
+      return a.name.localeCompare(b.name);
+    });
+    updatedPlayers.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const aDelta = a.deltaE !== undefined ? a.deltaE : 999;
+      const bDelta = b.deltaE !== undefined ? b.deltaE : 999;
+      if (aDelta !== bDelta) return aDelta - bDelta;
+      return a.name.localeCompare(b.name);
+    });
 
     setRoundResults(results);
     setPlayers(updatedPlayers);
@@ -255,7 +272,10 @@ export function useMultiplayer() {
           score: scoresRef.current.get(p.id) || 0,
           locked: false,
         }))
-        .sort((a, b) => b.score - a.score);
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          return a.name.localeCompare(b.name);
+        });
 
       setPlayers(finalPlayers);
       playersRef.current = finalPlayers;
@@ -290,8 +310,27 @@ export function useMultiplayer() {
       }));
     }
 
-    // Generate random target with selected room difficulty
-    const newTarget = generateRandomTarget(roomSettingsRef.current.difficulty);
+    // Resolve palette & generate random target with selected room difficulty
+    const customCfg =
+      roomSettingsRef.current.difficulty === 'custom'
+        ? {
+            previewSeconds: roomSettingsRef.current.previewSeconds,
+            guessSeconds: roomSettingsRef.current.guessSeconds,
+            rounds: roomSettingsRef.current.totalRounds,
+            palette: roomSettingsRef.current.palette ?? 'all',
+          }
+        : undefined;
+    const activePalette = resolvePaletteForRound(
+      roomSettingsRef.current.difficulty,
+      customCfg,
+      nextRound
+    );
+    setCurrentPalette(activePalette);
+    const newTarget = generateRandomTarget(
+      roomSettingsRef.current.difficulty,
+      customCfg,
+      nextRound
+    );
     currentTargetRef.current = newTarget;
     setCurrentTarget(newTarget);
     updateGameState('preview');
@@ -314,6 +353,7 @@ export function useMultiplayer() {
         round: nextRound,
         totalRounds: maxRounds,
         difficulty: roomSettingsRef.current.difficulty,
+        palette: activePalette,
       },
     });
 
@@ -576,6 +616,9 @@ export function useMultiplayer() {
         setPreviewDuration(payload.duration / 1000);
         setRound(payload.round);
         roundRef.current = payload.round;
+        if (payload.palette) {
+          setCurrentPalette(payload.palette);
+        }
         if (payload.totalRounds) {
           const syncedSettings: MultiplayerRoomSettings = {
             totalRounds: payload.totalRounds,
@@ -583,6 +626,7 @@ export function useMultiplayer() {
             guessSeconds:
               payload.guessTimeout && payload.guessTimeout > 0 ? payload.guessTimeout / 1000 : 0,
             difficulty: payload.difficulty || 'medium',
+            palette: payload.palette,
           };
           setRoomSettings(syncedSettings);
           roomSettingsRef.current = syncedSettings;
@@ -983,6 +1027,7 @@ export function useMultiplayer() {
     errorMessage,
     readyPlayerIds,
     roomSettings,
+    currentPalette,
     userId: userIdRef.current,
     createRoom,
     joinRoom,

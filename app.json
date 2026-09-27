@@ -2,7 +2,7 @@
   "expo": {
     "name": "color-fool",
     "slug": "color-fool",
-    "version": "1.0.0",
+    "version": "1.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "colorfool",
@@ -13,13 +13,13 @@
     },
     "android": {
       "package": "com.pritampips.color_fool",
-      "versionCode": 1,
+      "versionCode": 8,
       "permissions": [
         "INTERNET",
         "VIBRATE"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#090D16",
+        "backgroundColor": "#0B1017",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
@@ -40,10 +40,10 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#090D16",
+          "backgroundColor": "#0B1017",
           "dark": {
             "image": "./assets/splash-icon.png",
-            "backgroundColor": "#090D16"
+            "backgroundColor": "#0B1017"
           }
         }
       ]

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Pressable } from 'react-native';
 import { triggerHaptic } from '../utils/haptics';
+import { theme } from '../theme';
 
 export interface SettingsModalProps {
   visible: boolean;
@@ -81,9 +82,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </Text>
                 </View>
               </View>
-              {sliderPosition === 'left' && (
-                <Text style={styles.checkIcon}>✓</Text>
-              )}
             </TouchableOpacity>
 
             {/* Option 2: Right */}
@@ -118,9 +116,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </Text>
                 </View>
               </View>
-              {sliderPosition === 'right' && (
-                <Text style={styles.checkIcon}>✓</Text>
-              )}
             </TouchableOpacity>
           </View>
 
@@ -140,25 +135,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 const styles = StyleSheet.create({
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: theme.colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
     zIndex: 999,
   },
   modalCard: {
-    backgroundColor: '#1E293B',
+    backgroundColor: theme.colors.cardSurface,
     borderRadius: 20,
     padding: 24,
     width: '100%',
     maxWidth: 380,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 12,
+    borderColor: theme.colors.surfaceBorder,
   },
   modalHeaderRow: {
     flexDirection: 'row',
@@ -167,13 +157,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   modalTitle: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 20,
     fontWeight: '900',
     letterSpacing: 2,
   },
   modalSubtitle: {
-    color: '#94A3B8',
+    color: theme.colors.textMuted,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.2,
@@ -183,7 +173,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   closeIconText: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 18,
     fontWeight: '700',
   },
@@ -192,18 +182,18 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   optionCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: theme.colors.surface2,
     borderRadius: 14,
     padding: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: theme.colors.surfaceBorder,
   },
   optionCardActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-    borderColor: '#3B82F6',
+    backgroundColor: theme.colors.surface2,
+    borderColor: theme.colors.primaryAccent,
   },
   optionLeft: {
     flexDirection: 'row',
@@ -215,46 +205,41 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: '#64748B',
+    borderColor: theme.colors.textMuted,
     justifyContent: 'center',
     alignItems: 'center',
   },
   radioCircleActive: {
-    borderColor: '#3B82F6',
+    borderColor: theme.colors.primaryAccent,
   },
   radioInner: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#3B82F6',
+    backgroundColor: theme.colors.primaryAccent,
   },
   optionLabel: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 15,
     fontWeight: '700',
   },
   optionLabelActive: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontWeight: '800',
   },
   optionSub: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 11,
     marginTop: 2,
   },
-  checkIcon: {
-    color: '#10B981',
-    fontSize: 18,
-    fontWeight: '900',
-  },
   modalDoneBtn: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: theme.colors.primaryAccent,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
   },
   modalDoneText: {
-    color: '#FFFFFF',
+    color: theme.colors.accentText,
     fontWeight: '900',
     fontSize: 14,
     letterSpacing: 1.5,

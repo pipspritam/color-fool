@@ -35,6 +35,7 @@ export const DEFAULT_SETTINGS: AppSavedSettings = {
     previewSeconds: 3.0,
     guessSeconds: 15.0,
     rounds: 5,
+    palette: 'all',
   },
   playerName: generateAutoPlayerName(),
   hasCustomName: false,
@@ -103,10 +104,19 @@ export async function loadSavedSettings(): Promise<AppSavedSettings> {
           typeof parsed.guessSeconds === 'number' &&
           typeof parsed.rounds === 'number'
         ) {
+          const validPalette =
+            parsed.palette === 'easy' ||
+            parsed.palette === 'medium' ||
+            parsed.palette === 'hard' ||
+            parsed.palette === 'all'
+              ? parsed.palette
+              : 'all';
+
           customConfig = {
             previewSeconds: Math.min(99.0, Math.max(0.5, Math.round(parsed.previewSeconds * 10) / 10)),
             guessSeconds: Math.min(99.0, Math.max(0.5, Math.round(parsed.guessSeconds * 10) / 10)),
             rounds: Math.min(30, Math.max(1, Math.round(parsed.rounds))),
+            palette: validPalette,
           };
         }
       } catch {

@@ -7,6 +7,16 @@ import {
   getScoreRating,
   HSLColor,
 } from '../src/utils/colorScorer';
+import {
+  resolvePaletteForRound,
+  generateRandomTarget,
+  DIFFICULTY_CONFIG,
+  CustomGameConfig,
+} from '../src/hooks/useColorState';
+import {
+  sortPlayersDeterministic,
+  PlayerScoreItem,
+} from '../src/utils/playerSort';
 
 describe('colorScorer Unit Tests', () => {
   describe('Boundary Condition: Pure Black (L = 0)', () => {
@@ -165,6 +175,101 @@ describe('colorScorer Unit Tests', () => {
       const decimals = str.includes('.') ? str.split('.')[1].length : 0;
       expect(decimals).toBeLessThanOrEqual(2);
       expect(deltaE).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Custom Mode: Palette Resolution & Target Generation', () => {
+    it('returns standard difficulties unchanged', () => {
+      expect(resolvePaletteForRound('easy')).toBe('easy');
+      expect(resolvePaletteForRound('medium')).toBe('medium');
+      expect(resolvePaletteForRound('hard')).toBe('hard');
+    });
+
+    it('cycles through easy, medium, and hard when customConfig palette is "all"', () => {
+      const config: CustomGameConfig = {
+        previewSeconds: 3.0,
+        guessSeconds: 15.0,
+        rounds: 5,
+        palette: 'all',
+      };
+      expect(resolvePaletteForRound('custom', config, 1)).toBe('easy');
+      expect(resolvePaletteForRound('custom', config, 2)).toBe('medium');
+      expect(resolvePaletteForRound('custom', config, 3)).toBe('hard');
+      expect(resolvePaletteForRound('custom', config, 4)).toBe('easy');
+      expect(resolvePaletteForRound('custom', config, 5)).toBe('medium');
+    });
+
+    it('respects fixed palette selections in custom mode', () => {
+      const easyCfg: CustomGameConfig = {
+        previewSeconds: 4.0,
+        guessSeconds: 10.0,
+        rounds: 3,
+        palette: 'easy',
+      };
+      expect(resolvePaletteForRound('custom', easyCfg, 1)).toBe('easy');
+      expect(resolvePaletteForRound('custom', easyCfg, 2)).toBe('easy');
+
+      const hardCfg: CustomGameConfig = {
+        previewSeconds: 2.0,
+        guessSeconds: 8.0,
+        rounds: 3,
+        palette: 'hard',
+      };
+      expect(resolvePaletteForRound('custom', hardCfg, 1)).toBe('hard');
+    });
+
+    it('generates colors strictly conforming to palette bounds across rounds', () => {
+      const config: CustomGameConfig = {
+        previewSeconds: 3.0,
+        guessSeconds: 15.0,
+        rounds: 6,
+        palette: 'all',
+      };
+
+      for (let r = 1; r <= 6; r++) {
+        const expectedPalette = resolvePaletteForRound('custom', config, r);
+        const cfg = DIFFICULTY_CONFIG[expectedPalette];
+        const target = generateRandomTarget('custom', config, r);
+
+        expect(target.h).toBeGreaterThanOrEqual(0);
+        expect(target.h).toBeLessThan(360);
+        expect(target.s).toBeGreaterThanOrEqual(cfg.sMin);
+        expect(target.s).toBeLessThanOrEqual(cfg.sMax);
+        expect(target.l).toBeGreaterThanOrEqual(cfg.lMin);
+        expect(target.l).toBeLessThanOrEqual(cfg.lMax);
+      }
+    });
+  });
+
+  describe('Leaderboard & Multiplayer: Deterministic Tie-Breaking', () => {
+    it('sorts higher score first', () => {
+      const players: PlayerScoreItem[] = [
+        { id: '1', name: 'Alpha', score: 18.5, locked: true },
+        { id: '2', name: 'Beta', score: 25.0, locked: true },
+      ];
+      const sorted = sortPlayersDeterministic(players);
+      expect(sorted[0].id).toBe('2');
+      expect(sorted[1].id).toBe('1');
+    });
+
+    it('breaks ties using lower deltaE (closer perceptual match wins)', () => {
+      const players: PlayerScoreItem[] = [
+        { id: '1', name: 'Alpha', score: 20.0, locked: true, deltaE: 8.5 },
+        { id: '2', name: 'Beta', score: 20.0, locked: true, deltaE: 4.2 },
+      ];
+      const sorted = sortPlayersDeterministic(players);
+      expect(sorted[0].id).toBe('2'); // Beta has lower deltaE (4.2 < 8.5)
+      expect(sorted[1].id).toBe('1');
+    });
+
+    it('breaks secondary ties alphabetically by player name', () => {
+      const players: PlayerScoreItem[] = [
+        { id: '1', name: 'Zeta', score: 20.0, locked: true, deltaE: 5.0 },
+        { id: '2', name: 'Alpha', score: 20.0, locked: true, deltaE: 5.0 },
+      ];
+      const sorted = sortPlayersDeterministic(players);
+      expect(sorted[0].name).toBe('Alpha');
+      expect(sorted[1].name).toBe('Zeta');
     });
   });
 });

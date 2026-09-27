@@ -1,14 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { theme } from '../theme';
 
-export interface PlayerScore {
-  id: string;
-  name: string;
-  score: number;
-  locked: boolean;
-  deltaE?: number;
-  lastRoundScore?: number;
-}
+import { sortPlayersDeterministic, PlayerScoreItem } from '../utils/playerSort';
+
+export type PlayerScore = PlayerScoreItem & { locked: boolean };
+export { sortPlayersDeterministic };
 
 interface LeaderboardProps {
   players: PlayerScore[];
@@ -21,7 +18,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
   isResultPhase = false,
   currentUserId,
 }) => {
-  const sorted = [...players].sort((a, b) => b.score - a.score);
+  const sorted = sortPlayersDeterministic(players);
 
   return (
     <View style={styles.container}>
@@ -55,7 +52,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
               ) : (
                 <>
                   {player.locked ? (
-                    <Text style={styles.lockedText}>✓ LOCKED</Text>
+                    <Text style={styles.lockedText}>LOCKED</Text>
                   ) : (
                     <Text style={styles.pendingText}>PICKING...</Text>
                   )}
@@ -72,21 +69,16 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    backgroundColor: theme.colors.cardSurface,
     borderRadius: 16,
     padding: 10,
     minWidth: 180,
     maxWidth: 240,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 5,
+    borderColor: theme.colors.surfaceBorder,
   },
   title: {
-    color: 'rgba(255, 255, 255, 0.65)',
+    color: theme.colors.textMuted,
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 1.5,
@@ -98,50 +90,50 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 4,
     borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    borderBottomColor: theme.colors.surfaceBorder,
   },
   rank: {
-    color: '#FBBF24',
+    color: theme.colors.primaryAccent,
     fontSize: 11,
     fontWeight: '800',
     width: 22,
   },
   name: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 11,
     fontWeight: '600',
     flex: 1,
     marginRight: 6,
   },
   selfName: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontWeight: '800',
   },
   statusCol: {
     alignItems: 'flex-end',
   },
   lockedText: {
-    color: '#4ADE80',
+    color: theme.colors.primaryAccent,
     fontSize: 8.5,
     fontWeight: '800',
   },
   pendingText: {
-    color: 'rgba(255, 255, 255, 0.45)',
+    color: theme.colors.textMuted,
     fontSize: 8.5,
     fontWeight: '600',
   },
   score: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 10.5,
     fontWeight: '800',
   },
   roundPointsBadge: {
-    color: '#4ADE80',
+    color: theme.colors.primaryAccent,
     fontSize: 10.5,
     fontWeight: '800',
   },
   roundMetaText: {
-    color: 'rgba(255, 255, 255, 0.55)',
+    color: theme.colors.textSecondary,
     fontSize: 8.5,
     fontWeight: '600',
   },

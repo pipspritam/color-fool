@@ -9,10 +9,11 @@ import {
   Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Difficulty, CustomGameConfig } from '../hooks/useColorState';
+import { Difficulty, CustomGameConfig, PaletteType } from '../hooks/useColorState';
 import { triggerHaptic } from '../utils/haptics';
 import { SettingsModal } from '../components/SettingsModal';
 import { saveDifficulty, saveCustomConfig } from '../utils/storage';
+import { theme } from '../theme';
 
 interface HomeScreenProps {
   onStartSolo: (difficulty: Difficulty, customConfig?: CustomGameConfig) => void;
@@ -23,6 +24,60 @@ interface HomeScreenProps {
   initialDifficulty?: Difficulty;
   onDifficultyChange?: (difficulty: Difficulty) => void;
   onCustomConfigChange?: (config: CustomGameConfig) => void;
+}
+
+interface PaletteOptionItem {
+  id: PaletteType;
+  label: string;
+  tag: string;
+  desc: string;
+  samples: string[];
+}
+
+const PALETTE_OPTIONS: PaletteOptionItem[] = [
+  {
+    id: 'all',
+    label: 'All Mix',
+    tag: 'DYNAMIC',
+    desc: 'Cycles Vivid, Balanced & Expert across rounds',
+    samples: ['#38BDF8', '#0284C7', '#64748B'],
+  },
+  {
+    id: 'easy',
+    label: 'Vivid',
+    tag: 'EASY',
+    desc: 'High saturation & clear tones (40–90% S, 30–70% L)',
+    samples: ['#38BDF8', '#34D399', '#FB7185'],
+  },
+  {
+    id: 'medium',
+    label: 'Balanced',
+    tag: 'MEDIUM',
+    desc: 'Standard range with subtle nuances (15–95% S, 15–85% L)',
+    samples: ['#0284C7', '#0D9488', '#F59E0B'],
+  },
+  {
+    id: 'hard',
+    label: 'Expert',
+    tag: 'HARD',
+    desc: 'Muted, pastels & deep earth tones (5–100% S, 10–90% L)',
+    samples: ['#64748B', '#1E293B', '#E2E8F0'],
+  },
+];
+
+export function getPaletteDisplayName(p: PaletteType): string {
+  switch (p) {
+    case 'all':
+      return 'All Mix';
+    case 'easy':
+      return 'Vivid';
+    case 'medium':
+      return 'Balanced';
+    case 'hard':
+      return 'Expert';
+    default:
+      return 'All Mix';
+  }
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -39,10 +94,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [difficulty, setDifficulty] = useState<Difficulty>(initialDifficulty ?? 'medium');
   const [showSettings, setShowSettings] = useState(false);
 
-  // Custom Mode Config (Timers: 0.5s to 99.0s, Rounds: 1 to 30)
+  // Custom Mode Config (Timers: 0.5s to 99.0s, Rounds: 1 to 30, Palette: all / easy / medium / hard)
   const [previewSec, setPreviewSec] = useState(initialCustomConfig?.previewSeconds ?? 3.0);
   const [guessSec, setGuessSec] = useState(initialCustomConfig?.guessSeconds ?? 15.0);
   const [roundsCount, setRoundsCount] = useState(initialCustomConfig?.rounds ?? 5);
+  const [palette, setPalette] = useState<PaletteType>(initialCustomConfig?.palette ?? 'all');
+  const [showPaletteDropdown, setShowPaletteDropdown] = useState(false);
 
   const [previewText, setPreviewText] = useState(previewSec.toFixed(2));
   const [guessText, setGuessText] = useState(guessSec.toFixed(2));
@@ -63,6 +120,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       setGuessText(initialCustomConfig.guessSeconds.toFixed(2));
       setRoundsCount(initialCustomConfig.rounds);
       setRoundsText(String(initialCustomConfig.rounds));
+      setPalette(initialCustomConfig.palette ?? 'all');
     }
   }, [initialCustomConfig]);
 
@@ -75,8 +133,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     return Math.min(30, Math.max(1, Math.round(val)));
   };
 
-  const syncCustomConfig = (p: number, g: number, r: number) => {
-    const cfg: CustomGameConfig = { previewSeconds: p, guessSeconds: g, rounds: r };
+  const syncCustomConfig = (p: number, g: number, r: number, pal: PaletteType) => {
+    const cfg: CustomGameConfig = { previewSeconds: p, guessSeconds: g, rounds: r, palette: pal };
     saveCustomConfig(cfg);
     onCustomConfigChange?.(cfg);
   };
@@ -93,7 +151,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     const next = clampValue(previewSec + delta);
     setPreviewSec(next);
     setPreviewText(next.toFixed(2));
-    syncCustomConfig(next, guessSec, roundsCount);
+    syncCustomConfig(next, guessSec, roundsCount, palette);
   };
 
   const adjustGuess = (delta: number) => {
@@ -101,7 +159,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     const next = clampValue(guessSec + delta);
     setGuessSec(next);
     setGuessText(next.toFixed(2));
-    syncCustomConfig(previewSec, next, roundsCount);
+    syncCustomConfig(previewSec, next, roundsCount, palette);
   };
 
   const adjustRounds = (delta: number) => {
@@ -109,7 +167,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     const next = clampRounds(roundsCount + delta);
     setRoundsCount(next);
     setRoundsText(String(next));
-    syncCustomConfig(previewSec, guessSec, next);
+    syncCustomConfig(previewSec, guessSec, next, palette);
+  };
+
+  const handlePaletteSelect = (nextPal: PaletteType) => {
+    triggerHaptic('selection');
+    setPalette(nextPal);
+    syncCustomConfig(previewSec, guessSec, roundsCount, nextPal);
   };
 
   const handlePreviewTextChange = (text: string) => {
@@ -140,21 +204,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     const valid = clampValue(previewSec);
     setPreviewSec(valid);
     setPreviewText(valid.toFixed(2));
-    syncCustomConfig(valid, guessSec, roundsCount);
+    syncCustomConfig(valid, guessSec, roundsCount, palette);
   };
 
   const handleBlurGuess = () => {
     const valid = clampValue(guessSec);
     setGuessSec(valid);
     setGuessText(valid.toFixed(2));
-    syncCustomConfig(previewSec, valid, roundsCount);
+    syncCustomConfig(previewSec, valid, roundsCount, palette);
   };
 
   const handleBlurRounds = () => {
     const valid = clampRounds(roundsCount);
     setRoundsCount(valid);
     setRoundsText(String(valid));
-    syncCustomConfig(previewSec, guessSec, valid);
+    syncCustomConfig(previewSec, guessSec, valid, palette);
   };
 
   const handleStartGame = () => {
@@ -163,6 +227,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         previewSeconds: previewSec,
         guessSeconds: guessSec,
         rounds: roundsCount,
+        palette,
       });
     } else {
       onStartSolo(difficulty);
@@ -175,6 +240,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         previewSeconds: previewSec,
         guessSeconds: guessSec,
         rounds: roundsCount,
+        palette,
       });
     } else {
       onStartMultiplayer(difficulty);
@@ -182,7 +248,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   };
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+    <TouchableWithoutFeedback
+      onPress={() => {
+        Keyboard.dismiss();
+        setShowPaletteDropdown(false);
+      }}
+      accessible={false}
+    >
       <View
         style={[
           styles.container,
@@ -216,9 +288,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         {/* Brand Header */}
         <View style={styles.header}>
           <View style={styles.logoBadge}>
-            <View style={[styles.dot, { backgroundColor: '#EF4444' }]} />
-            <View style={[styles.dot, { backgroundColor: '#10B981' }]} />
-            <View style={[styles.dot, { backgroundColor: '#3B82F6' }]} />
+            <View style={[styles.dot, { backgroundColor: theme.colors.dots.dot1 }]} />
+            <View style={[styles.dot, { backgroundColor: theme.colors.dots.dot2 }]} />
+            <View style={[styles.dot, { backgroundColor: theme.colors.dots.dot3 }]} />
           </View>
           <Text style={styles.title}>color-fool</Text>
           <Text style={styles.tagline}>Memorize. Reconstruct. Match.</Text>
@@ -400,6 +472,113 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     </TouchableOpacity>
                   </View>
                 </View>
+
+                {/* 4. Color Palette Selector (Dropdown) */}
+                <View style={styles.dropdownControlContainer}>
+                  <TouchableOpacity
+                    style={styles.timerControlRow}
+                    onPress={() => {
+                      triggerHaptic('light');
+                      setShowPaletteDropdown((prev) => !prev);
+                    }}
+                    activeOpacity={0.7}
+                    accessible={true}
+                    accessibilityRole="button"
+                    accessibilityLabel="Toggle color palette dropdown"
+                  >
+                    <View style={styles.timerLabelCol}>
+                      <Text style={styles.timerTitle}>COLOR PALETTE</Text>
+                      <Text style={styles.timerSub}>
+                        {getPaletteDisplayName(palette)} spectrum
+                      </Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.dropdownTrigger,
+                        showPaletteDropdown && styles.dropdownTriggerActive,
+                      ]}
+                    >
+                      <Text style={styles.dropdownTriggerText}>
+                        {getPaletteDisplayName(palette)}
+                      </Text>
+                      <Text style={styles.dropdownChevron}>
+                        {showPaletteDropdown ? '▲' : '▼'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Dropdown Menu with All Mix / Vivid / Balanced / Expert */}
+                  {showPaletteDropdown && (
+                    <View style={styles.dropdownMenu}>
+                      {PALETTE_OPTIONS.map((opt) => {
+                        const isSelected = palette === opt.id;
+                        return (
+                          <TouchableOpacity
+                            key={opt.id}
+                            style={[
+                              styles.dropdownMenuItem,
+                              isSelected && styles.dropdownMenuItemActive,
+                            ]}
+                            onPress={() => {
+                              handlePaletteSelect(opt.id);
+                              setShowPaletteDropdown(false);
+                            }}
+                            activeOpacity={0.7}
+                            accessible={true}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Select ${opt.label} palette`}
+                          >
+                            <View style={styles.dropdownItemLeft}>
+                              <View style={styles.dropdownItemTitleRow}>
+                                <Text
+                                  style={[
+                                    styles.dropdownItemLabel,
+                                    isSelected && styles.dropdownItemLabelActive,
+                                  ]}
+                                >
+                                  {opt.label}
+                                </Text>
+                                <View
+                                  style={[
+                                    styles.dropdownItemBadge,
+                                    isSelected && styles.dropdownItemBadgeActive,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.dropdownItemBadgeText,
+                                      isSelected && styles.dropdownItemBadgeTextActive,
+                                    ]}
+                                  >
+                                    {opt.tag}
+                                  </Text>
+                                </View>
+                              </View>
+                              <Text style={styles.dropdownItemSub}>{opt.desc}</Text>
+                            </View>
+
+                            <View style={styles.dropdownItemRight}>
+                              <View style={styles.dropdownSwatchesRow}>
+                                {opt.samples.map((color, idx) => (
+                                  <View
+                                    key={idx}
+                                    style={[styles.dropdownSwatch, { backgroundColor: color }]}
+                                  />
+                                ))}
+                              </View>
+                              {isSelected && (
+                                <View style={styles.dropdownActiveTag}>
+                                  <Text style={styles.dropdownActiveTagText}>SELECTED</Text>
+                                </View>
+                              )}
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
               </View>
             )}
           </View>
@@ -424,7 +603,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           >
             <Text style={styles.primaryBtnText}>
               {difficulty === 'custom'
-                ? `START CUSTOM MATCH (${roundsCount} ROUND${roundsCount > 1 ? 'S' : ''})`
+                ? `START CUSTOM MATCH (${roundsCount} RND • ${getPaletteDisplayName(palette).toUpperCase()})`
                 : 'SOLO MATCH (5 ROUNDS)'}
             </Text>
           </TouchableOpacity>
@@ -454,7 +633,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#090D16',
+    backgroundColor: theme.colors.background,
   },
   settingsBtn: {
     position: 'absolute',
@@ -462,16 +641,16 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: theme.colors.cardSurface,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: theme.colors.surfaceBorder,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 30,
   },
   settingsIcon: {
     fontSize: 20,
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
   },
   content: {
     flex: 1,
@@ -496,25 +675,25 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 48,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     letterSpacing: 2,
   },
   tagline: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 15,
     fontWeight: '600',
     marginTop: 6,
     letterSpacing: 0.5,
   },
   card: {
-    backgroundColor: '#131D31',
+    backgroundColor: theme.colors.cardSurface,
     padding: 20,
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: theme.colors.surfaceBorder,
   },
   cardHeader: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1.5,
@@ -528,39 +707,39 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: '#1E293B',
+    backgroundColor: theme.colors.surface2,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'transparent',
   },
   diffBtnActive: {
-    backgroundColor: '#38BDF8',
-    borderColor: '#38BDF8',
+    backgroundColor: theme.colors.primaryAccent,
+    borderColor: theme.colors.primaryAccent,
   },
   diffText: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontWeight: '800',
     fontSize: 12,
     letterSpacing: 1,
   },
   diffTextActive: {
-    color: '#090D16',
+    color: theme.colors.accentText,
     fontWeight: '900',
   },
   descBox: {
     marginTop: 16,
     paddingTop: 14,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    borderTopColor: theme.colors.surfaceBorder,
     alignItems: 'center',
   },
   descTitle: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 14,
     fontWeight: '700',
   },
   descSub: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 12,
     marginTop: 3,
   },
@@ -573,25 +752,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1E293B',
+    backgroundColor: theme.colors.surface2,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: theme.colors.surfaceBorder,
   },
   timerLabelCol: {
     flex: 1,
     marginRight: 6,
   },
   timerTitle: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
   timerSub: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 10,
     marginTop: 2,
   },
@@ -604,12 +783,12 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: '#334155',
+    backgroundColor: theme.colors.surfaceBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepBtnText: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 18,
     fontWeight: '900',
     lineHeight: 20,
@@ -617,17 +796,17 @@ const styles = StyleSheet.create({
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
+    backgroundColor: theme.colors.cardSurface,
     borderRadius: 8,
     paddingHorizontal: 8,
     height: 32,
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.3)',
+    borderColor: theme.colors.surfaceBorder,
     minWidth: 54,
     justifyContent: 'center',
   },
   timerInput: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 13,
     fontWeight: '900',
     textAlign: 'center',
@@ -635,27 +814,150 @@ const styles = StyleSheet.create({
     minWidth: 32,
   },
   secSuffix: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 11,
     fontWeight: '700',
     marginLeft: 2,
   },
+  dropdownControlContainer: {
+    width: '100%',
+  },
+  dropdownTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: theme.colors.cardSurface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+    height: 32,
+    paddingHorizontal: 10,
+    gap: 8,
+    minWidth: 110,
+  },
+  dropdownTriggerActive: {
+    borderColor: theme.colors.primaryAccent,
+    backgroundColor: 'rgba(56, 189, 248, 0.08)',
+  },
+  dropdownTriggerText: {
+    color: theme.colors.primaryAccent,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  dropdownChevron: {
+    color: theme.colors.primaryAccent,
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  dropdownMenu: {
+    backgroundColor: theme.colors.surface2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+    padding: 6,
+    gap: 6,
+    marginTop: 6,
+  },
+  dropdownMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: theme.colors.cardSurface,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+  },
+  dropdownMenuItemActive: {
+    borderColor: theme.colors.primaryAccent,
+    backgroundColor: 'rgba(56, 189, 248, 0.08)',
+  },
+  dropdownItemLeft: {
+    flex: 1,
+    marginRight: 10,
+  },
+  dropdownItemTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dropdownItemLabel: {
+    color: theme.colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  dropdownItemLabelActive: {
+    color: theme.colors.primaryAccent,
+  },
+  dropdownItemBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    backgroundColor: theme.colors.surfaceBorder,
+  },
+  dropdownItemBadgeActive: {
+    backgroundColor: 'rgba(56, 189, 248, 0.2)',
+  },
+  dropdownItemBadgeText: {
+    color: theme.colors.textMuted,
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  dropdownItemBadgeTextActive: {
+    color: theme.colors.primaryAccent,
+  },
+  dropdownItemSub: {
+    color: theme.colors.textSecondary,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  dropdownItemRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  dropdownSwatchesRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  dropdownSwatch: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  dropdownActiveTag: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    backgroundColor: theme.colors.primaryAccent,
+  },
+  dropdownActiveTagText: {
+    color: theme.colors.accentText,
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
   infoCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    backgroundColor: theme.colors.surface2,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: theme.colors.surfaceBorder,
   },
   infoTitle: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1.5,
     marginBottom: 6,
   },
   infoText: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 12,
     lineHeight: 18,
   },
@@ -664,32 +966,27 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   primaryBtn: {
-    backgroundColor: '#38BDF8',
+    backgroundColor: theme.colors.primaryAccent,
     paddingVertical: 18,
     borderRadius: 16,
     alignItems: 'center',
-    shadowColor: '#38BDF8',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 6,
   },
   primaryBtnText: {
-    color: '#090D16',
+    color: theme.colors.accentText,
     fontSize: 15,
     fontWeight: '900',
     letterSpacing: 1.2,
   },
   secondaryBtn: {
-    backgroundColor: '#131D31',
+    backgroundColor: theme.colors.cardSurface,
     borderWidth: 1.5,
-    borderColor: '#38BDF8',
+    borderColor: theme.colors.primaryAccent,
     paddingVertical: 16,
     borderRadius: 16,
     alignItems: 'center',
   },
   secondaryBtnText: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 1,

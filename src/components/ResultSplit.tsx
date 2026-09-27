@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HSLColor, hslToString, getScoreRating } from '../utils/colorScorer';
+import { theme } from '../theme';
 
 interface ResultSplitProps {
   target: HSLColor;
@@ -57,10 +58,10 @@ export const ResultSplit: React.FC<ResultSplitProps> = ({
     onNextRound();
   };
 
-  let buttonLabel = isLastRound ? 'VIEW MATCH SUMMARY →' : 'NEXT ROUND →';
+  let buttonLabel = isLastRound ? 'VIEW MATCH SUMMARY' : 'NEXT ROUND';
   if (isMultiplayer) {
     if (hasReadied) {
-      buttonLabel = `✓ READY! (${readyCount}/${totalPlayers} WAITING...)`;
+      buttonLabel = `READY! (${readyCount}/${totalPlayers} WAITING...)`;
     } else {
       const actionName = isLastRound ? 'VIEW SUMMARY' : 'NEXT COLOR';
       buttonLabel = `${actionName} (${readyCount}/${totalPlayers} READY • ${secondsLeft}s)`;
@@ -157,43 +158,38 @@ const styles = StyleSheet.create({
     paddingTop: 84,
   },
   swatchLabel: {
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    backgroundColor: theme.colors.hudControl,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 16,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: theme.colors.hudBorder,
   },
   labelText: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontWeight: '900',
     letterSpacing: 1.5,
     fontSize: 12,
   },
   hslDetail: {
-    color: 'rgba(255, 255, 255, 0.75)',
+    color: theme.colors.textSecondary,
     fontSize: 10,
     marginTop: 2,
     fontWeight: '600',
   },
   card: {
-    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    backgroundColor: theme.colors.cardSurface,
     width: '88%',
     maxWidth: 360,
-    borderRadius: 24,
+    borderRadius: 20,
     padding: 24,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.6,
-    shadowRadius: 24,
-    elevation: 12,
+    borderColor: theme.colors.surfaceBorder,
   },
   roundHeader: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: theme.colors.textMuted,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 2,
@@ -204,17 +200,17 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
   },
   scoreNumber: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 48,
     fontWeight: '900',
   },
   scoreMax: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: theme.colors.textMuted,
     fontSize: 18,
     fontWeight: '700',
   },
   ratingText: {
-    color: '#4ADE80',
+    color: theme.colors.primaryAccent,
     fontSize: 16,
     fontWeight: '800',
     marginTop: 2,
@@ -222,22 +218,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   metricBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: theme.colors.surface2,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 12,
     marginVertical: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
   },
   metricText: {
-    color: 'rgba(255, 255, 255, 0.85)',
+    color: theme.colors.textSecondary,
     fontSize: 13,
   },
   bold: {
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
   },
   button: {
-    backgroundColor: '#38BDF8',
+    backgroundColor: theme.colors.primaryAccent,
     paddingHorizontal: 28,
     paddingVertical: 14,
     borderRadius: 25,
@@ -246,22 +244,22 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   buttonReadied: {
-    backgroundColor: 'rgba(74, 222, 128, 0.15)',
+    backgroundColor: theme.colors.surface2,
     borderWidth: 1.5,
-    borderColor: '#4ADE80',
+    borderColor: theme.colors.primaryAccent,
   },
   buttonText: {
-    color: '#0F172A',
+    color: theme.colors.accentText,
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 1.2,
   },
   buttonTextReadied: {
-    color: '#4ADE80',
+    color: theme.colors.primaryAccent,
     letterSpacing: 0.8,
   },
   autoAdvanceHint: {
-    color: '#94A3B8',
+    color: theme.colors.textMuted,
     fontSize: 11,
     marginTop: 10,
     fontWeight: '600',

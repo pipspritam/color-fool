@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,7 @@ import { useMultiplayer } from '../hooks/useMultiplayer';
 import { VerticalSlider } from '../components/VerticalSlider';
 import { CountdownRing } from '../components/CountdownRing';
 import { ResultSplit } from '../components/ResultSplit';
-import { Leaderboard } from '../components/Leaderboard';
+import { Leaderboard, sortPlayersDeterministic } from '../components/Leaderboard';
 import { SettingsModal } from '../components/SettingsModal';
 import {
   useColorState,
@@ -30,6 +30,7 @@ import { MultiplayerRoomSettings } from '../hooks/useMultiplayer';
 import { hslToString } from '../utils/colorScorer';
 import { triggerHaptic } from '../utils/haptics';
 import { loadSavedSettings, savePlayerName, generateAutoPlayerName } from '../utils/storage';
+import { theme } from '../theme';
 
 interface LobbyScreenProps {
   difficulty: Difficulty;
@@ -89,6 +90,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         : DIFFICULTY_CONFIG[difficulty as Exclude<Difficulty, 'custom'>].previewSeconds,
     guessSeconds: difficulty === 'custom' && customConfig ? customConfig.guessSeconds : 0,
     totalRounds: difficulty === 'custom' && customConfig ? customConfig.rounds : 5,
+    palette: difficulty === 'custom' && customConfig ? customConfig.palette : undefined,
   };
 
   const {
@@ -198,26 +200,20 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     }
   };
 
-  const hueColors = [
-    '#ff0000',
-    '#ffff00',
-    '#00ff00',
-    '#00ffff',
-    '#0000ff',
-    '#ff00ff',
-    '#ff0000',
-  ];
+  const hueColors = useMemo(
+    () => ['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ff0000'],
+    []
+  );
 
-  const satColors = [
-    `hsl(${guess.h}, 0%, ${guess.l}%)`,
-    `hsl(${guess.h}, 100%, ${guess.l}%)`,
-  ];
+  const satColors = useMemo(
+    () => [`hsl(${guess.h}, 0%, ${guess.l}%)`, `hsl(${guess.h}, 100%, ${guess.l}%)`],
+    [guess.h, guess.l]
+  );
 
-  const lightColors = [
-    '#000000',
-    `hsl(${guess.h}, ${guess.s}%, 50%)`,
-    '#ffffff',
-  ];
+  const lightColors = useMemo(
+    () => ['#000000', `hsl(${guess.h}, ${guess.s}%, 50%)`, '#ffffff'],
+    [guess.h, guess.s]
+  );
 
   // 1. IN-GAME MULTIPLAYER SCREENS
   if (gameState !== 'lobby') {
@@ -375,7 +371,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               {lockedIn ? (
                 <View style={styles.lockedBadge}>
                   <Text style={styles.lockedBadgeText}>
-                    ✓ GUESS LOCKED IN! WAITING FOR OTHERS ({players.filter((p) => p.locked).length} / {players.length})...
+                    GUESS LOCKED IN! WAITING FOR OTHERS ({players.filter((p) => p.locked).length} / {players.length})...
                   </Text>
                 </View>
               ) : (
@@ -410,14 +406,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           {/* Match Summary Podium */}
           {isSummary && (
             <View style={styles.podiumOverlay}>
-              <Text style={styles.podiumTitle}>🏆 MATCH FINISHED</Text>
+              <Text style={styles.podiumTitle}>MATCH FINISHED</Text>
               <Text style={styles.podiumSub}>FINAL PODIUM</Text>
 
               <View style={styles.podiumCard}>
-                {players
-                  .slice()
-                  .sort((a, b) => b.score - a.score)
-                  .map((p, idx) => {
+                {sortPlayersDeterministic(players).map((p, idx) => {
                     const isSelf = p.id === userId;
                     return (
                       <View
@@ -425,13 +418,13 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                         style={[styles.podiumRow, isSelf && styles.podiumRowSelf]}
                       >
                         <Text style={styles.podiumRank}>
-                          {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                          {`#${idx + 1}`}
                         </Text>
                         <Text
                           style={[styles.podiumName, isSelf && styles.podiumNameSelf]}
                           numberOfLines={1}
                         >
-                          {p.name} {isSelf ? '★' : ''}
+                          {p.name} {isSelf ? '(YOU)' : ''}
                         </Text>
                         <Text style={styles.podiumScore}>{p.score.toFixed(2)} pts</Text>
                       </View>
@@ -518,7 +511,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
       {errorMessage && (
         <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>⚠ {errorMessage}</Text>
+          <Text style={styles.errorText}>{errorMessage}</Text>
         </View>
       )}
 
@@ -546,7 +539,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 activeOpacity={0.7}
               >
                 <Text style={styles.railBadgeText}>
-                  SLIDERS: {sliderPosition.toUpperCase()} ⚙
+                  SLIDERS: {sliderPosition.toUpperCase()}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -626,13 +619,13 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   accessibilityRole="button"
                   accessibilityLabel="Generate random player name"
                 >
-                  <Text style={styles.diceIcon}>🎲</Text>
+                  <Text style={styles.diceIcon}>ROLL</Text>
                 </TouchableOpacity>
               </View>
               <Text style={styles.nameHint}>
                 {isCustomName
                   ? 'Your custom name is saved and will be remembered.'
-                  : 'Tap 🎲 to roll another name, or edit above to customize.'}
+                  : 'Tap ROLL to roll another name, or edit above to customize.'}
               </Text>
             </View>
 
@@ -691,14 +684,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             {/* 4-Item Grid with Dynamic Values */}
             <View style={styles.specsGrid}>
               <View style={styles.specBox}>
-                <Text style={styles.specIcon}>🔄</Text>
+                <Text style={styles.specIcon}>ROUNDS</Text>
                 <Text style={styles.specValue}>{homeConfigSettings.totalRounds} ROUNDS</Text>
                 <Text style={styles.specLabel}>Match Length</Text>
                 <Text style={styles.specSub}>Synchronized for all</Text>
               </View>
 
               <View style={styles.specBox}>
-                <Text style={styles.specIcon}>👁</Text>
+                <Text style={styles.specIcon}>PREVIEW</Text>
                 <Text style={styles.specValue}>
                   {homeConfigSettings.previewSeconds.toFixed(2)}s
                 </Text>
@@ -707,7 +700,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               </View>
 
               <View style={styles.specBox}>
-                <Text style={styles.specIcon}>⏱</Text>
+                <Text style={styles.specIcon}>TIMER</Text>
                 <Text
                   style={[
                     styles.specValue,
@@ -727,7 +720,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               </View>
 
               <View style={styles.specBox}>
-                <Text style={styles.specIcon}>🎯</Text>
+                <Text style={styles.specIcon}>POINTS</Text>
                 <Text style={styles.specValue}>{homeConfigSettings.totalRounds * 10} PTS</Text>
                 <Text style={styles.specLabel}>Max Score</Text>
                 <Text style={styles.specSub}>CIE ΔE accuracy</Text>
@@ -775,7 +768,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 <View style={styles.ruleCol}>
                   <Text style={styles.ruleHeading}>Live Leaderboard & Podium</Text>
                   <Text style={styles.ruleDetail}>
-                    Side-by-side color swatches and ΔE scores are revealed after each round. Final 🥇 🥈 🥉 podium crowns the champion after {homeConfigSettings.totalRounds} rounds!
+                    Side-by-side color swatches and ΔE scores are revealed after each round. Final podium crowns the champion after {homeConfigSettings.totalRounds} rounds!
                   </Text>
                 </View>
               </View>
@@ -809,7 +802,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 activeOpacity={0.7}
               >
                 <Text style={styles.railBadgeText}>
-                  SLIDERS: {sliderPosition.toUpperCase()} ⚙
+                  SLIDERS: {sliderPosition.toUpperCase()}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -820,7 +813,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               onPress={handleShareCode}
               activeOpacity={0.85}
             >
-              <Text style={styles.shareCodeBtnText}>📤 SHARE 6-DIGIT CODE</Text>
+              <Text style={styles.shareCodeBtnText}>SHARE 6-DIGIT CODE</Text>
             </TouchableOpacity>
 
             <Text style={styles.roomShareHint}>No login needed • Friends can join with this code</Text>
@@ -864,6 +857,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               <Text style={styles.activeModeDetailsTitle}>MATCH CONFIGURATION & RULES</Text>
               <Text style={styles.activeModeDetailsSub}>
                 • Mode: {roomSettings.difficulty.toUpperCase()} ({roomSettings.totalRounds} Synchronized Rounds){'\n'}
+                {roomSettings.difficulty === 'custom' && (
+                  <Text>• Palettes: {roomSettings.palette === 'all' || !roomSettings.palette ? 'ALL TYPES (Easy, Medium & Hard)' : `${roomSettings.palette.toUpperCase()} PALETTE ONLY`}{'\n'}</Text>
+                )}
                 • Preview: {roomSettings.previewSeconds.toFixed(2)}s • Guess Limit: {roomSettings.guessSeconds > 0 ? `${roomSettings.guessSeconds.toFixed(2)}s (auto lock-in)` : 'Unlimited (locks when all submit)'}{'\n'}
                 • Sliders Rail: Docked on {sliderPosition.toUpperCase()} side{'\n'}
                 • Scoring: Perceptual CIE ΔE distance (0 to 10 points per round)
@@ -910,7 +906,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               accessibilityRole="button"
               accessibilityLabel="Leave room"
             >
-              <Text style={styles.cancelRoomText}>✕ LEAVE ROOM</Text>
+              <Text style={styles.cancelRoomText}>LEAVE ROOM</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -934,7 +930,7 @@ const styles = StyleSheet.create({
   },
   lobbyContainer: {
     flex: 1,
-    backgroundColor: '#090D16',
+    backgroundColor: theme.colors.background,
     padding: 20,
   },
   lobbyHeader: {
@@ -948,7 +944,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   backText: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontWeight: '800',
     fontSize: 14,
   },
@@ -956,10 +952,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#131D31',
+    backgroundColor: theme.colors.cardSurface,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
   },
   headerRightRow: {
     flexDirection: 'row',
@@ -970,14 +968,14 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#131D31',
+    backgroundColor: theme.colors.cardSurface,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: theme.colors.surfaceBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
   lobbySettingsIcon: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 16,
   },
   statusDot: {
@@ -986,39 +984,39 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   statusText: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
   errorBanner: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: theme.colors.status.dangerMuted,
     borderWidth: 1,
-    borderColor: '#EF4444',
+    borderColor: theme.colors.status.danger,
     padding: 12,
     borderRadius: 12,
     marginBottom: 16,
   },
   errorText: {
-    color: '#F87171',
+    color: theme.colors.status.danger,
     fontSize: 13,
     fontWeight: '700',
   },
   card: {
-    backgroundColor: '#131D31',
+    backgroundColor: theme.colors.cardSurface,
     padding: 24,
-    borderRadius: 24,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: theme.colors.surfaceBorder,
   },
   title: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 26,
     fontWeight: '900',
     letterSpacing: 1.5,
   },
   subtitle: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 13,
     marginTop: 4,
     marginBottom: 24,
@@ -1033,7 +1031,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   label: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1.5,
@@ -1044,10 +1042,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   nameAutoBadge: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
   },
   nameCustomBadge: {
-    color: '#10B981',
+    color: theme.colors.status.success,
   },
   nameInputRow: {
     flexDirection: 'row',
@@ -1061,40 +1059,43 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 14,
-    backgroundColor: '#1E293B',
+    backgroundColor: theme.colors.surface2,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: theme.colors.surfaceBorder,
     justifyContent: 'center',
     alignItems: 'center',
   },
   diceIcon: {
-    fontSize: 20,
+    fontSize: 11,
+    fontWeight: '900',
+    color: theme.colors.primaryAccent,
+    letterSpacing: 0.5,
   },
   nameHint: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 11,
     marginTop: 6,
     fontStyle: 'italic',
   },
   input: {
-    backgroundColor: '#1E293B',
-    color: '#FFFFFF',
+    backgroundColor: theme.colors.surface2,
+    color: theme.colors.textPrimary,
     padding: 14,
     borderRadius: 14,
     fontSize: 16,
     fontWeight: '700',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: theme.colors.surfaceBorder,
   },
   hostBtn: {
-    backgroundColor: '#38BDF8',
+    backgroundColor: theme.colors.primaryAccent,
     paddingVertical: 16,
     borderRadius: 14,
     alignItems: 'center',
     marginTop: 6,
   },
   hostBtnText: {
-    color: '#090D16',
+    color: theme.colors.accentText,
     fontWeight: '900',
     fontSize: 14,
     letterSpacing: 1,
@@ -1107,10 +1108,10 @@ const styles = StyleSheet.create({
   line: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: theme.colors.surfaceBorder,
   },
   dividerText: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 11,
     fontWeight: '800',
     paddingHorizontal: 12,
@@ -1127,14 +1128,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   joinBtn: {
-    backgroundColor: '#38BDF8',
+    backgroundColor: theme.colors.primaryAccent,
     paddingHorizontal: 22,
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
   },
   joinBtnText: {
-    color: '#090D16',
+    color: theme.colors.accentText,
     fontWeight: '900',
     fontSize: 13,
   },
@@ -1149,12 +1150,12 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   selectedConfigCard: {
-    backgroundColor: '#131D31',
+    backgroundColor: theme.colors.cardSurface,
     borderRadius: 20,
     padding: 18,
     marginBottom: 16,
     borderWidth: 1.5,
-    borderColor: 'rgba(56, 189, 248, 0.35)',
+    borderColor: theme.colors.surfaceBorder,
   },
   selectedConfigHeader: {
     flexDirection: 'row',
@@ -1163,39 +1164,39 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   configBadge: {
-    backgroundColor: '#38BDF8',
+    backgroundColor: theme.colors.primaryAccent,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
   },
   configBadgeText: {
-    color: '#090D16',
+    color: theme.colors.accentText,
     fontWeight: '900',
     fontSize: 11,
     letterSpacing: 1,
   },
   railBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: theme.colors.surface2,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: theme.colors.surfaceBorder,
   },
   railBadgeText: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontWeight: '800',
     fontSize: 10,
     letterSpacing: 0.8,
   },
   selectedConfigTitle: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 15,
     fontWeight: '900',
     letterSpacing: 1,
   },
   selectedConfigSub: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 11,
     marginTop: 2,
     marginBottom: 12,
@@ -1203,22 +1204,24 @@ const styles = StyleSheet.create({
   selectedPillRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E293B',
+    backgroundColor: theme.colors.surface2,
     borderRadius: 12,
     paddingVertical: 8,
     paddingHorizontal: 10,
     justifyContent: 'space-around',
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
   },
   selectedPill: {
     alignItems: 'center',
   },
   selectedPillVal: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 14,
     fontWeight: '900',
   },
   selectedPillLbl: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -1227,7 +1230,7 @@ const styles = StyleSheet.create({
   selectedPillDivider: {
     width: 1,
     height: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: theme.colors.surfaceBorder,
   },
   roomBadgeRow: {
     flexDirection: 'row',
@@ -1243,39 +1246,34 @@ const styles = StyleSheet.create({
     zIndex: 18,
   },
   unlimitedTimerBadge: {
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: theme.colors.cardSurface,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.3)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    borderColor: theme.colors.surfaceBorder,
   },
   unlimitedTimerTitle: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 13,
     fontWeight: '900',
     letterSpacing: 1,
   },
   unlimitedTimerSub: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 10,
     fontWeight: '700',
     marginTop: 2,
     letterSpacing: 0.5,
   },
   modeDetailsCard: {
-    backgroundColor: '#131D31',
-    borderRadius: 24,
+    backgroundColor: theme.colors.cardSurface,
+    borderRadius: 20,
     padding: 20,
     marginTop: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: theme.colors.surfaceBorder,
   },
   modeHeaderRow: {
     flexDirection: 'row',
@@ -1284,32 +1282,32 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   modeTag: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    backgroundColor: theme.colors.surface2,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.3)',
+    borderColor: theme.colors.surfaceBorder,
   },
   modeTagText: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 0.8,
   },
   modeCapacity: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 11,
     fontWeight: '800',
   },
   modeTitle: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: 1.2,
   },
   modeSubtitle: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 12,
     marginTop: 4,
     marginBottom: 18,
@@ -1324,41 +1322,44 @@ const styles = StyleSheet.create({
   specBox: {
     flex: 1,
     minWidth: '46%',
-    backgroundColor: '#1E293B',
+    backgroundColor: theme.colors.surface2,
     padding: 12,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: theme.colors.surfaceBorder,
   },
   specIcon: {
-    fontSize: 18,
+    fontSize: 10,
+    fontWeight: '900',
+    color: theme.colors.primaryAccent,
+    letterSpacing: 1,
     marginBottom: 6,
   },
   specValue: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 14,
     fontWeight: '900',
   },
   specLabel: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 10,
     fontWeight: '800',
     marginTop: 2,
     letterSpacing: 0.5,
   },
   specSub: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 10,
     marginTop: 2,
   },
   rulesSection: {
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    borderTopColor: theme.colors.surfaceBorder,
     paddingTop: 16,
     gap: 12,
   },
   rulesHeader: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1.5,
@@ -1373,23 +1374,25 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#1E293B',
-    color: '#38BDF8',
+    backgroundColor: theme.colors.surface2,
+    color: theme.colors.primaryAccent,
     textAlign: 'center',
     lineHeight: 22,
     fontSize: 11,
     fontWeight: '900',
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
   },
   ruleCol: {
     flex: 1,
   },
   ruleHeading: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 12,
     fontWeight: '800',
   },
   ruleDetail: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 11,
     marginTop: 2,
     lineHeight: 16,
@@ -1397,7 +1400,7 @@ const styles = StyleSheet.create({
   roomSpecsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E293B',
+    backgroundColor: theme.colors.surface2,
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 12,
@@ -1405,18 +1408,18 @@ const styles = StyleSheet.create({
     marginVertical: 14,
     justifyContent: 'space-around',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: theme.colors.surfaceBorder,
   },
   roomSpecBadge: {
     alignItems: 'center',
   },
   roomSpecBadgeVal: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 15,
     fontWeight: '900',
   },
   roomSpecBadgeLbl: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -1425,80 +1428,82 @@ const styles = StyleSheet.create({
   roomSpecDivider: {
     width: 1,
     height: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: theme.colors.surfaceBorder,
   },
   activeModeDetailsBox: {
-    backgroundColor: 'rgba(56, 189, 248, 0.08)',
+    backgroundColor: theme.colors.surface2,
     borderRadius: 12,
     padding: 12,
     width: '100%',
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.2)',
+    borderColor: theme.colors.surfaceBorder,
   },
   activeModeDetailsTitle: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1,
     marginBottom: 4,
   },
   activeModeDetailsSub: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 11,
     lineHeight: 17,
   },
   roomActiveCard: {
-    backgroundColor: '#131D31',
+    backgroundColor: theme.colors.cardSurface,
     width: '100%',
     padding: 24,
-    borderRadius: 24,
+    borderRadius: 20,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: theme.colors.surfaceBorder,
   },
   roomCodeLabel: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 2,
   },
   roomCodeValue: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 52,
     fontWeight: '900',
     letterSpacing: 8,
     marginVertical: 6,
   },
   roomShareHint: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 12,
     marginTop: 4,
   },
   shareCodeBtn: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    backgroundColor: theme.colors.cardSurface,
     borderWidth: 1.5,
-    borderColor: '#38BDF8',
+    borderColor: theme.colors.primaryAccent,
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 14,
     marginVertical: 10,
   },
   shareCodeBtnText: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 1,
   },
   rosterCard: {
-    backgroundColor: '#1E293B',
+    backgroundColor: theme.colors.surface2,
     width: '100%',
     borderRadius: 16,
     padding: 16,
     marginVertical: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
   },
   rosterTitle: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1.5,
@@ -1509,50 +1514,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    borderBottomColor: theme.colors.surfaceBorder,
   },
   playerIndex: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     width: 28,
     fontWeight: '700',
   },
   playerItemName: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontWeight: '700',
     fontSize: 15,
     flex: 1,
   },
   hostBadge: {
-    color: '#FBBF24',
+    color: theme.colors.status.warning,
     fontSize: 10,
     fontWeight: '900',
-    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    backgroundColor: theme.colors.status.warningMuted,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
   },
   startBtn: {
-    backgroundColor: '#38BDF8',
+    backgroundColor: theme.colors.primaryAccent,
     width: '100%',
     paddingVertical: 18,
     borderRadius: 16,
     alignItems: 'center',
   },
   startBtnText: {
-    color: '#090D16',
+    color: theme.colors.accentText,
     fontWeight: '900',
     fontSize: 15,
     letterSpacing: 1,
   },
   waitingCard: {
-    backgroundColor: '#1E293B',
+    backgroundColor: theme.colors.surface2,
     padding: 16,
     borderRadius: 14,
     width: '100%',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
   },
   waitingText: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 13,
     fontStyle: 'italic',
   },
@@ -1562,13 +1569,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderColor: theme.colors.status.danger,
+    backgroundColor: theme.colors.status.dangerMuted,
     width: '100%',
     alignItems: 'center',
   },
   cancelRoomText: {
-    color: '#EF4444',
+    color: theme.colors.status.danger,
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 1,
@@ -1587,15 +1594,15 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   leaveBtn: {
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: theme.colors.hudControl,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: theme.colors.hudBorder,
   },
   leaveText: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontWeight: '800',
     fontSize: 12,
   },
@@ -1603,14 +1610,14 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: theme.colors.hudControl,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: theme.colors.hudBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
   inGameSettingsIcon: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 16,
   },
   centerHud: {
@@ -1621,9 +1628,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: 2,
-    textShadowColor: 'rgba(0, 0, 0, 0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
   },
   gameRound: {
     color: 'rgba(255, 255, 255, 0.85)',
@@ -1631,9 +1635,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1,
     marginTop: 2,
-    textShadowColor: 'rgba(0, 0, 0, 0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   previewCenter: {
     flex: 1,
@@ -1668,9 +1669,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     marginTop: 6,
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   bottomHud: {
     position: 'absolute',
@@ -1681,70 +1679,72 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   lockInBtn: {
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: theme.colors.primaryAccent,
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
+    borderColor: theme.colors.primaryAccent,
     paddingHorizontal: 36,
     paddingVertical: 15,
     borderRadius: 30,
   },
   lockInText: {
-    color: '#FFFFFF',
+    color: theme.colors.accentText,
     fontWeight: '900',
     fontSize: 14,
     letterSpacing: 1.8,
   },
   lockedBadge: {
-    backgroundColor: 'rgba(74, 222, 128, 0.9)',
+    backgroundColor: theme.colors.surface2,
     paddingHorizontal: 22,
     paddingVertical: 12,
     borderRadius: 24,
+    borderWidth: 1,
+    borderColor: theme.colors.primaryAccent,
   },
   lockedBadgeText: {
-    color: '#090D16',
+    color: theme.colors.primaryAccent,
     fontWeight: '900',
     fontSize: 12,
     letterSpacing: 1,
   },
   podiumOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(9, 13, 22, 0.95)',
+    backgroundColor: theme.colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
     zIndex: 100,
   },
   podiumTitle: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 32,
     fontWeight: '900',
     letterSpacing: 2,
   },
   podiumSub: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 2,
     marginVertical: 8,
   },
   podiumCard: {
-    backgroundColor: '#131D31',
+    backgroundColor: theme.colors.cardSurface,
     width: '100%',
     borderRadius: 20,
     padding: 16,
     marginVertical: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: theme.colors.surfaceBorder,
   },
   podiumRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    borderBottomColor: theme.colors.surfaceBorder,
   },
   podiumRowSelf: {
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    backgroundColor: theme.colors.surface2,
     borderRadius: 10,
     paddingHorizontal: 8,
   },
@@ -1752,25 +1752,25 @@ const styles = StyleSheet.create({
     width: 36,
     fontSize: 16,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: theme.colors.primaryAccent,
   },
   podiumName: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
     flex: 1,
   },
   podiumNameSelf: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontWeight: '800',
   },
   podiumScore: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 16,
     fontWeight: '900',
   },
   returnLobbyBtn: {
-    backgroundColor: '#38BDF8',
+    backgroundColor: theme.colors.primaryAccent,
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 16,
@@ -1778,7 +1778,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   returnLobbyText: {
-    color: '#090D16',
+    color: theme.colors.accentText,
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 1,

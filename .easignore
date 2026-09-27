@@ -1,14 +1,55 @@
 # EAS Build Ignore File
+# Keeps EAS cloud build archives lean, fast, and secure
+
+# Dependencies & Build artifacts
 node_modules/
 server/
 .git/
 .expo/
+.eas/
+dist/
+web-build/
+android/
+ios/
+
+# Keystores & Certificates (Local secrets)
 *.jks
 *.keystore
 *.pem
 *.p8
 *.p12
 *.key
+*.cer
+*.der
+*.pfx
+*.crl
+*.mobileprovision
+
+# Environment Secrets
 .env*
 !app.json
 
+# Development & AI Tooling
+.agents/
+.agent/
+.gemini/
+.gemni/
+.claude/
+.idea/
+.vscode/
+
+# Testing & Coverage
+__tests__/
+coverage/
+.nyc_output/
+
+# Design & Store Marketing Assets (Not needed in app runtime)
+theme-previews/
+assets/feature-graphic.png
+assets/play-store-icon.png
+
+# Logs & OS artifacts
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini

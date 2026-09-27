@@ -146,11 +146,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     backgroundColor: '#FFFFFF',
     borderWidth: 2.5,
-    borderColor: 'rgba(0, 0, 0, 0.25)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.45,
-    shadowRadius: 5,
-    elevation: 6,
+    borderColor: '#0B1017',
   },
 });

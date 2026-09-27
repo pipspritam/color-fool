@@ -85,3 +85,8 @@ $RECYCLE.BIN/
 .gemni/
 .agents/
 .agent/
+.claude/*
+!.claude/settings.json
+
+# Design previews & mockups
+theme-previews/

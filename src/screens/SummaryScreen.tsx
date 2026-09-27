@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RoundRecord } from './GameScreen';
 import { hslToString } from '../utils/colorScorer';
 import { triggerHaptic } from '../utils/haptics';
+import { theme } from '../theme';
 
 interface SummaryScreenProps {
   records: RoundRecord[];
@@ -38,11 +39,11 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({ records, onRestart
 
   const getRank = (score: number) => {
     const pct = maxScore > 0 ? (score / maxScore) * 100 : 0;
-    if (pct >= 90) return { title: 'Master Colorist', emoji: '🏆', color: '#FBBF24' };
-    if (pct >= 75) return { title: 'Keen Eyesight', emoji: '✨', color: '#38BDF8' };
-    if (pct >= 55) return { title: 'Sharp Observer', emoji: '🎯', color: '#4ADE80' };
-    if (pct >= 35) return { title: 'Average Perception', emoji: '🎨', color: '#A78BFA' };
-    return { title: 'Needs Calibration', emoji: '👀', color: '#F87171' };
+    if (pct >= 90) return { title: 'Master Colorist', badge: 'MASTER', color: theme.colors.status.warning };
+    if (pct >= 75) return { title: 'Keen Eyesight', badge: 'EXPERT', color: theme.colors.primaryAccent };
+    if (pct >= 55) return { title: 'Sharp Observer', badge: 'SHARP', color: theme.colors.primaryAccent };
+    if (pct >= 35) return { title: 'Average Perception', badge: 'APPRENTICE', color: theme.colors.textSecondary };
+    return { title: 'Needs Calibration', badge: 'CALIBRATING', color: theme.colors.status.danger };
   };
 
   const rank = getRank(totalScore);
@@ -85,7 +86,9 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({ records, onRestart
 
         {/* Total Score Badge Card */}
         <View style={styles.totalCard}>
-          <Text style={styles.rankEmoji}>{rank.emoji}</Text>
+          <View style={[styles.rankBadge, { borderColor: rank.color }]}>
+            <Text style={[styles.rankBadgeText, { color: rank.color }]}>{rank.badge}</Text>
+          </View>
           <Text style={styles.totalScore}>{totalScore.toFixed(2)}</Text>
           <Text style={styles.totalMax}>/ {maxScore} TOTAL POINTS</Text>
           <Text style={[styles.rankTitle, { color: rank.color }]}>{rank.title}</Text>
@@ -97,6 +100,9 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({ records, onRestart
           <View key={i} style={styles.recordRow}>
             <View style={styles.roundCol}>
               <Text style={styles.roundNum}>R{i + 1}</Text>
+              {r.palette && (
+                <Text style={styles.roundPalette}>{r.palette.toUpperCase().slice(0, 4)}</Text>
+              )}
             </View>
 
             <View style={styles.swatchPair}>
@@ -153,51 +159,55 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({ records, onRestart
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#090D16',
+    backgroundColor: theme.colors.background,
   },
   scroll: {
     padding: 24,
     alignItems: 'center',
   },
   title: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 32,
     fontWeight: '900',
     letterSpacing: 2,
     marginTop: 10,
   },
   sub: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 14,
     marginTop: 4,
     marginBottom: 16,
   },
   totalCard: {
-    backgroundColor: '#131D31',
+    backgroundColor: theme.colors.cardSurface,
     width: '100%',
     borderRadius: 24,
     padding: 24,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 8,
+    borderColor: theme.colors.surfaceBorder,
   },
-  rankEmoji: {
-    fontSize: 36,
+  rankBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    marginBottom: 6,
+  },
+  rankBadgeText: {
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.5,
   },
   totalScore: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 64,
     fontWeight: '900',
     lineHeight: 70,
     marginTop: 4,
   },
   totalMax: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1.5,
@@ -208,7 +218,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   sectionHeader: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1.5,
@@ -217,7 +227,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   recordRow: {
-    backgroundColor: '#131D31',
+    backgroundColor: theme.colors.cardSurface,
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
@@ -225,15 +235,22 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: theme.colors.surfaceBorder,
   },
   roundCol: {
-    width: 34,
+    width: 38,
   },
   roundNum: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 13,
     fontWeight: '800',
+  },
+  roundPalette: {
+    color: theme.colors.primaryAccent,
+    fontSize: 8,
+    fontWeight: '800',
+    marginTop: 2,
+    letterSpacing: 0.5,
   },
   swatchPair: {
     flexDirection: 'row',
@@ -247,10 +264,10 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 8,
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: theme.colors.surfaceBorder,
   },
   swatchLabel: {
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontSize: 8,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -261,12 +278,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   deltaText: {
-    color: '#94A3B8',
+    color: theme.colors.textSecondary,
     fontSize: 12,
     fontWeight: '600',
   },
   roundScore: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 16,
     fontWeight: '900',
     marginTop: 2,
@@ -280,33 +297,28 @@ const styles = StyleSheet.create({
   },
   shareBtn: {
     flex: 1,
-    backgroundColor: '#1E293B',
+    backgroundColor: theme.colors.cardSurface,
     borderWidth: 1.5,
-    borderColor: '#38BDF8',
+    borderColor: theme.colors.primaryAccent,
     paddingVertical: 16,
     borderRadius: 16,
     alignItems: 'center',
   },
   shareText: {
-    color: '#38BDF8',
+    color: theme.colors.primaryAccent,
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 1,
   },
   restartBtn: {
     flex: 1,
-    backgroundColor: '#38BDF8',
+    backgroundColor: theme.colors.primaryAccent,
     paddingVertical: 16,
     borderRadius: 16,
     alignItems: 'center',
-    shadowColor: '#38BDF8',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
   },
   restartText: {
-    color: '#090D16',
+    color: theme.colors.accentText,
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 1,

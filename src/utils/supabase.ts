@@ -28,12 +28,3 @@ export function getSupabaseClient(url = currentUrl, key = currentKey) {
 }
 
 export const supabase = getSupabaseClient();
-
-export function isSupabaseConfigured(): boolean {
-  return (
-    Boolean(currentUrl) &&
-    !currentUrl.includes('your-project') &&
-    Boolean(currentKey) &&
-    !currentKey.includes('your-anon-key')
-  );
-}

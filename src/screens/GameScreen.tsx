@@ -11,15 +11,18 @@ import {
   CustomGameConfig,
   DIFFICULTY_CONFIG,
   generateRandomTarget,
+  resolvePaletteForRound,
 } from '../hooks/useColorState';
 import { HSLColor, calculateDeltaE, scoreFromDeltaE, hslToString } from '../utils/colorScorer';
 import { triggerHaptic } from '../utils/haptics';
+import { theme } from '../theme';
 
 export interface RoundRecord {
   target: HSLColor;
   guess: HSLColor;
   deltaE: number;
   score: number;
+  palette?: 'easy' | 'medium' | 'hard';
 }
 
 interface GameScreenProps {
@@ -42,10 +45,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const insets = useSafeAreaInsets();
   const [round, setRound] = useState(1);
   const [phase, setPhase] = useState<'preview' | 'guess' | 'result'>('preview');
-  const [target, setTarget] = useState<HSLColor>(() => generateRandomTarget(difficulty));
+  const [target, setTarget] = useState<HSLColor>(() =>
+    generateRandomTarget(difficulty, customConfig, 1)
+  );
   const [records, setRecords] = useState<RoundRecord[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const isMountedRef = useRef(false);
+
+  const currentPalette = resolvePaletteForRound(difficulty, customConfig, round);
 
   const { guess, setHue, setSaturation, setLightness, resetGuess } = useColorState();
 
@@ -78,11 +85,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   // Initialize round
   const startRound = useCallback(() => {
-    const newTarget = generateRandomTarget(difficulty);
+    const newTarget = generateRandomTarget(difficulty, customConfig, round);
     setTarget(newTarget);
     resetGuess();
     setPhase('preview');
-  }, [difficulty, resetGuess]);
+  }, [difficulty, customConfig, round, resetGuess]);
 
   useEffect(() => {
     if (!isMountedRef.current) {
@@ -103,10 +110,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     const deltaE = calculateDeltaE(target, guess);
     const score = scoreFromDeltaE(deltaE);
 
-    const record: RoundRecord = { target, guess, deltaE, score };
+    const record: RoundRecord = {
+      target,
+      guess,
+      deltaE,
+      score,
+      palette: currentPalette,
+    };
     setRecords((prev) => [...prev, record]);
     setPhase('result');
-  }, [phase, target, guess]);
+  }, [phase, target, guess, currentPalette]);
 
   const handleNextRound = () => {
     if (round >= totalRounds) {
@@ -326,17 +339,17 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   exitBtn: {
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: theme.colors.hudControl,
     width: 44,
     height: 44,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: theme.colors.hudBorder,
   },
   exitText: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 18,
     fontWeight: '800',
   },
@@ -348,9 +361,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: 2,
-    textShadowColor: 'rgba(0, 0, 0, 0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
   },
   hudRound: {
     color: 'rgba(255, 255, 255, 0.85)',
@@ -358,9 +368,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1.5,
     marginTop: 2,
-    textShadowColor: 'rgba(0, 0, 0, 0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   hudRight: {
     flexDirection: 'row',
@@ -371,24 +378,24 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: theme.colors.hudControl,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
+    borderColor: theme.colors.hudBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
   hudSettingsIcon: {
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     fontSize: 16,
   },
   hudScoreBox: {
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: theme.colors.hudControl,
     paddingHorizontal: 14,
     paddingVertical: 5,
     borderRadius: 14,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: theme.colors.hudBorder,
   },
   hudScoreLabel: {
     color: 'rgba(255, 255, 255, 0.65)',
@@ -396,7 +403,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   hudScoreVal: {
-    color: '#FFFFFF',
+    color: theme.colors.primaryAccent,
     fontSize: 14,
     fontWeight: '900',
   },
@@ -441,9 +448,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     marginTop: 6,
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   bottomHud: {
     position: 'absolute',
@@ -454,20 +458,15 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   lockInBtn: {
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: theme.colors.primaryAccent,
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
+    borderColor: theme.colors.primaryAccent,
     paddingHorizontal: 36,
     paddingVertical: 15,
     borderRadius: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 8,
   },
   lockInText: {
-    color: '#FFFFFF',
+    color: theme.colors.accentText,
     fontWeight: '900',
     fontSize: 14,
     letterSpacing: 1.8,
